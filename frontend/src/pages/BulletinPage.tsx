@@ -3,9 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import { Newspaper, Clock, ChevronDown, ChevronUp, ExternalLink, Sparkles, Search, X } from 'lucide-react';
 import { ensureOk, getBackendBaseUrl, normalizeUnknownError } from '../api/client';
 import { clearStoredUser, getAuthHeaders } from '../lib/auth';
+import { categoryLabel } from '../lib/categoryLabels';
 import { getImageForTopic } from '../lib/topicImages';
 import type { Cluster, Digest, Paper } from '../lib/types';
 import { EmptyState, LoadingState, StateMessage } from '../components/ui';
+import { MarkdownContent } from '../components/MarkdownContent';
 
 interface BulletinGroup {
   cluster: Cluster;
@@ -45,6 +47,44 @@ interface UserBulletinResponse {
 }
 
 type SelectionType = 'clusters' | 'categories';
+type WeeksBestSelectionType = 'cluster' | 'category';
+
+interface WeeksBestSource {
+  source_id: string;
+  article_id: number;
+  title: string;
+  authors?: string[];
+  published_date?: string | null;
+  source_name?: string | null;
+  doi?: string | null;
+  pdf_url?: string | null;
+  external_url?: string | null;
+  category?: string | null;
+  cluster_id?: number | null;
+}
+
+interface WeeksBestBulletin {
+  status: 'validated' | 'failed' | 'empty' | 'not_generated';
+  title?: string;
+  selection_label?: string;
+  week_start?: string;
+  week_end?: string;
+  full_markdown?: string;
+  sources?: WeeksBestSource[];
+  metadata?: {
+    candidate_count?: number;
+    selected_count?: number;
+    source_count?: number;
+    generated_at?: string;
+    limited_activity?: boolean;
+  };
+  validation?: {
+    valid: boolean;
+    errors: string[];
+    warnings: string[];
+  };
+  message?: string;
+}
 
 type ApiRecord = Record<string, unknown>;
 
@@ -162,6 +202,13 @@ export default function BulletinPage() {
   const [topicSearch, setTopicSearch] = useState('');
   const [topicsOpen, setTopicsOpen] = useState(false);
   const [selectedOnly, setSelectedOnly] = useState(false);
+  const [weeksBestType, setWeeksBestType] = useState<WeeksBestSelectionType>('cluster');
+  const [weeksBestSelectionId, setWeeksBestSelectionId] = useState('');
+  const [weeksBest, setWeeksBest] = useState<WeeksBestBulletin | null>(null);
+  const [weeksBestLoading, setWeeksBestLoading] = useState(false);
+  const [weeksBestError, setWeeksBestError] = useState<string | null>(null);
+  const [weeksBestWeekStart, setWeeksBestWeekStart] = useState(() => previousWeekRange().start);
+  const [weeksBestWeekEnd, setWeeksBestWeekEnd] = useState(() => previousWeekRange().end);
 
   const PAPERS_PER_PAGE = 10;
   const backendBaseUrl = getBackendBaseUrl();
@@ -211,6 +258,13 @@ export default function BulletinPage() {
           setSelectionType(userBulletin.preference.selection_type);
           setSelectedClusterIds(new Set((userBulletin.preference.cluster_ids || []).map(String)));
           setSelectedCategories(new Set(userBulletin.preference.categories || []));
+          if (userBulletin.preference.selection_type === 'clusters' && userBulletin.preference.cluster_ids.length) {
+            setWeeksBestType('cluster');
+            setWeeksBestSelectionId(String(userBulletin.preference.cluster_ids[0]));
+          } else if (userBulletin.preference.categories.length) {
+            setWeeksBestType('category');
+            setWeeksBestSelectionId(userBulletin.preference.categories[0]);
+          }
         }
         setError(null);
       } catch (e) {
@@ -256,11 +310,14 @@ export default function BulletinPage() {
       if (selectedOnly && !selectedCategories.has(item.category)) {
         return false;
       }
-      return !query || item.category.toLowerCase().includes(query);
+      return !query || `${item.category} ${categoryLabel(item.category)}`.toLowerCase().includes(query);
     });
   }, [categoryOptions, selectedCategories, selectedOnly, topicSearch]);
 
   const visibleGroups = groups;
+  const weeksBestOptions = weeksBestType === 'cluster'
+    ? clusterOptions.map((cluster) => ({ id: cluster.id, label: cluster.name }))
+    : categoryOptions.map((item) => ({ id: item.category, label: categoryLabel(item.category) }));
 
   const toggleTopic = (clusterId: string) => {
     setSelectedClusterIds((prev) => {
@@ -323,6 +380,40 @@ export default function BulletinPage() {
       setError(normalizeUnknownError(error, "Bulletin preference could not be saved.").message);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const generateWeeksBest = async (forceRefresh = false) => {
+    if (!weeksBestSelectionId) {
+      setWeeksBestError('Choose a cluster or category first.');
+      return;
+    }
+    if (!weeksBestWeekStart || !weeksBestWeekEnd || weeksBestWeekEnd < weeksBestWeekStart) {
+      setWeeksBestError('Choose a valid date range.');
+      return;
+    }
+    setWeeksBestLoading(true);
+    setWeeksBestError(null);
+    try {
+      const response = await fetch(`${backendBaseUrl}/bulletin/weeks-best/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          selection_type: weeksBestType,
+          selection_id: weeksBestSelectionId,
+          week_start: weeksBestWeekStart,
+          week_end: weeksBestWeekEnd,
+          force_refresh: forceRefresh,
+          use_llm: false,
+        }),
+      });
+      await ensureOk(response);
+      setWeeksBest(await response.json() as WeeksBestBulletin);
+    } catch (error) {
+      console.error("Failed to generate Week's Best bulletin", error);
+      setWeeksBestError(normalizeUnknownError(error, "Week's Best bulletin could not be generated.").message);
+    } finally {
+      setWeeksBestLoading(false);
     }
   };
 
@@ -402,7 +493,7 @@ export default function BulletinPage() {
               <h1 className="text-lg font-semibold text-[var(--text-primary)]">Research Bulletin</h1>
               <p className="text-xs text-[var(--text-secondary)]">
                 {preference?.selection_type === 'categories'
-                  ? `Saved categories: ${preference.categories.join(', ')}`
+                  ? `Saved categories: ${preference.categories.map(categoryLabel).join(', ')}`
                   : `Saved clusters: ${preference?.cluster_ids.length || 0}`}
               </p>
             </div>
@@ -507,6 +598,36 @@ export default function BulletinPage() {
           topicSearch={topicSearch}
           toggleCategory={toggleCategory}
           toggleTopic={toggleTopic}
+        />
+
+        <WeeksBestPanel
+          bulletin={weeksBest}
+          error={weeksBestError}
+          loading={weeksBestLoading}
+          onGenerate={() => generateWeeksBest(false)}
+          onRefresh={() => generateWeeksBest(true)}
+          onSelectionChange={(value) => {
+            setWeeksBestSelectionId(value);
+            setWeeksBest(null);
+          }}
+          onWeekEndChange={(value) => {
+            setWeeksBestWeekEnd(value);
+            setWeeksBest(null);
+          }}
+          onWeekStartChange={(value) => {
+            setWeeksBestWeekStart(value);
+            setWeeksBest(null);
+          }}
+          onTypeChange={(type) => {
+            setWeeksBestType(type);
+            setWeeksBestSelectionId('');
+            setWeeksBest(null);
+          }}
+          options={weeksBestOptions}
+          selectionId={weeksBestSelectionId}
+          selectionType={weeksBestType}
+          weekEnd={weeksBestWeekEnd}
+          weekStart={weeksBestWeekStart}
         />
 
         {/* Cluster Groups */}
@@ -826,7 +947,7 @@ function BulletinPreferencePanel({
                     className="h-4 w-4 rounded border-[var(--border)] text-emerald-500 focus:ring-emerald-400"
                   />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium text-[var(--text-primary)]">{item.category}</span>
+                    <span className="block truncate text-sm font-medium text-[var(--text-primary)]">{categoryLabel(item.category)}</span>
                     <span className="block text-xs text-[var(--text-muted)]">{item.paper_count} papers</span>
                   </span>
                 </label>
@@ -838,6 +959,217 @@ function BulletinPreferencePanel({
       ) : null}
     </section>
   );
+}
+
+function WeeksBestPanel({
+  bulletin,
+  error,
+  loading,
+  onGenerate,
+  onRefresh,
+  onSelectionChange,
+  onWeekEndChange,
+  onWeekStartChange,
+  onTypeChange,
+  options,
+  selectionId,
+  selectionType,
+  weekEnd,
+  weekStart,
+}: {
+  bulletin: WeeksBestBulletin | null;
+  error: string | null;
+  loading: boolean;
+  onGenerate: () => void;
+  onRefresh: () => void;
+  onSelectionChange: (value: string) => void;
+  onWeekEndChange: (value: string) => void;
+  onWeekStartChange: (value: string) => void;
+  onTypeChange: (type: WeeksBestSelectionType) => void;
+  options: Array<{ id: string; label: string }>;
+  selectionId: string;
+  selectionType: WeeksBestSelectionType;
+  weekEnd: string;
+  weekStart: string;
+}) {
+  const statusLabel = bulletin?.status === 'validated'
+    ? 'Validated'
+    : bulletin?.status === 'empty'
+      ? 'No papers'
+      : bulletin?.status === 'failed'
+        ? 'Validation failed'
+        : 'Not generated';
+
+  return (
+    <section className="mb-6 border border-[var(--border)] bg-[var(--surface)] rounded-lg">
+      <div className="flex flex-col gap-3 border-b border-[var(--border-muted)] px-4 py-3 xl:flex-row xl:items-center xl:justify-between">
+        <div>
+          <div className="flex items-center gap-2">
+            <Sparkles size={15} className="text-amber-500" />
+            <h2 className="text-sm font-semibold text-[var(--text-primary)]">Week's Best Bulletin</h2>
+            {bulletin ? (
+              <span className="rounded bg-[var(--surface-elevated)] px-2 py-0.5 text-[10px] font-semibold uppercase text-[var(--text-secondary)]">
+                {statusLabel}
+              </span>
+            ) : null}
+          </div>
+          <p className="mt-1 text-xs text-[var(--text-secondary)]">
+            {weekStart} - {weekEnd} · cached editorial summary from selected weekly papers
+          </p>
+        </div>
+        <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
+          <div className="inline-flex h-9 rounded-md border border-[var(--border)] bg-[var(--surface-elevated)] p-0.5">
+            <button
+              type="button"
+              onClick={() => onTypeChange('cluster')}
+              className={`rounded px-3 text-xs font-semibold ${selectionType === 'cluster' ? 'bg-[var(--surface)] text-emerald-600 shadow-sm' : 'text-[var(--text-secondary)]'}`}
+            >
+              Cluster
+            </button>
+            <button
+              type="button"
+              onClick={() => onTypeChange('category')}
+              className={`rounded px-3 text-xs font-semibold ${selectionType === 'category' ? 'bg-[var(--surface)] text-emerald-600 shadow-sm' : 'text-[var(--text-secondary)]'}`}
+            >
+              Category
+            </button>
+          </div>
+          <select
+            value={selectionId}
+            onChange={(event) => onSelectionChange(event.target.value)}
+            className="h-9 rounded-md border border-[var(--border)] bg-[var(--surface-elevated)] px-3 text-sm text-[var(--text-primary)] outline-none focus:border-emerald-400 lg:w-80"
+          >
+            <option value="">Choose {selectionType}</option>
+            {options.map((option) => (
+              <option key={option.id} value={option.id}>{option.label}</option>
+            ))}
+          </select>
+          <label className="flex h-9 items-center gap-2 rounded-md border border-[var(--border)] bg-[var(--surface-elevated)] px-2 text-xs text-[var(--text-secondary)]">
+            <span className="font-medium">From</span>
+            <input
+              type="date"
+              value={weekStart}
+              max={weekEnd}
+              onChange={(event) => onWeekStartChange(event.target.value)}
+              className="h-7 bg-transparent text-xs font-semibold text-[var(--text-primary)] outline-none"
+            />
+          </label>
+          <label className="flex h-9 items-center gap-2 rounded-md border border-[var(--border)] bg-[var(--surface-elevated)] px-2 text-xs text-[var(--text-secondary)]">
+            <span className="font-medium">To</span>
+            <input
+              type="date"
+              value={weekEnd}
+              min={weekStart}
+              onChange={(event) => onWeekEndChange(event.target.value)}
+              className="h-7 bg-transparent text-xs font-semibold text-[var(--text-primary)] outline-none"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={onGenerate}
+            disabled={loading || !selectionId}
+            className="h-9 rounded-md bg-emerald-500 px-3 text-xs font-semibold text-white shadow-sm shadow-emerald-500/20 hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {loading ? 'Generating...' : 'Generate'}
+          </button>
+          {bulletin ? (
+            <button
+              type="button"
+              onClick={onRefresh}
+              disabled={loading || !selectionId}
+              className="h-9 rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 text-xs font-semibold text-[var(--text-secondary)] hover:border-emerald-300 hover:text-emerald-600 disabled:opacity-50"
+            >
+              Refresh
+            </button>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="p-4">
+        {error ? (
+          <div className="rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div>
+        ) : null}
+
+        {!bulletin && !error ? (
+          <div className="rounded-md border border-dashed border-[var(--border)] bg-[var(--surface-elevated)] px-4 py-6 text-center text-sm text-[var(--text-secondary)]">
+            Generate a cached weekly editorial bulletin for the selected topic.
+          </div>
+        ) : null}
+
+        {bulletin?.status === 'empty' ? (
+          <div className="rounded-md border border-[var(--border)] bg-[var(--surface-elevated)] px-4 py-3 text-sm text-[var(--text-secondary)]">
+            {bulletin.message || 'No eligible papers were found for this week.'}
+          </div>
+        ) : null}
+
+        {bulletin?.status === 'failed' ? (
+          <div className="rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+            The generated bulletin did not pass validation.
+            {bulletin.validation?.errors?.length ? ` ${bulletin.validation.errors.join(' ')}` : ''}
+          </div>
+        ) : null}
+
+        {bulletin?.status === 'validated' ? (
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+            <article className="rounded-md border border-[var(--border)] bg-[var(--surface-elevated)] p-4">
+              <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-[var(--text-secondary)]">
+                <span>{bulletin.selection_label}</span>
+                <span>·</span>
+                <span>{bulletin.week_start} - {bulletin.week_end}</span>
+                <span>·</span>
+                <span>{bulletin.metadata?.selected_count || 0} selected papers</span>
+                <span>·</span>
+                <span>{bulletin.metadata?.candidate_count || 0} candidates reviewed</span>
+              </div>
+              <MarkdownContent content={bulletin.full_markdown || ''} />
+            </article>
+            <aside className="rounded-md border border-[var(--border)] bg-[var(--surface)] p-4">
+              <h3 className="text-sm font-semibold text-[var(--text-primary)]">Sources</h3>
+              <div className="mt-3 space-y-3">
+                {(bulletin.sources || []).map((source) => (
+                  <div key={source.source_id} className="rounded-md border border-[var(--border)] bg-[var(--surface-elevated)] p-3">
+                    <p className="text-xs font-semibold text-emerald-600">[{source.source_id}]</p>
+                    <p className="mt-1 text-sm font-semibold leading-snug text-[var(--text-primary)]">{source.title}</p>
+                    <p className="mt-1 text-xs text-[var(--text-secondary)]">
+                      {(source.authors || []).slice(0, 3).join(', ') || 'Unknown authors'}
+                    </p>
+                    <p className="mt-1 text-xs text-[var(--text-muted)]">
+                      {source.source_name || 'Unknown source'} · {source.published_date || 'Unknown date'}
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {source.pdf_url ? (
+                        <a href={source.pdf_url} target="_blank" rel="noreferrer" className="text-xs font-semibold text-emerald-600 hover:underline">PDF</a>
+                      ) : null}
+                      {source.external_url ? (
+                        <a href={source.external_url} target="_blank" rel="noreferrer" className="text-xs font-semibold text-emerald-600 hover:underline">Source</a>
+                      ) : null}
+                      {source.doi ? <span className="text-xs text-[var(--text-muted)]">DOI: {source.doi}</span> : null}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </aside>
+          </div>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+function previousWeekRange(): { start: string; end: string; label: string } {
+  const today = new Date();
+  const day = today.getDay();
+  const daysSinceMonday = day === 0 ? 6 : day - 1;
+  const thisMonday = new Date(today);
+  thisMonday.setHours(0, 0, 0, 0);
+  thisMonday.setDate(today.getDate() - daysSinceMonday);
+  const previousMonday = new Date(thisMonday);
+  previousMonday.setDate(thisMonday.getDate() - 7);
+  const previousSunday = new Date(thisMonday);
+  previousSunday.setDate(thisMonday.getDate() - 1);
+  const start = previousMonday.toISOString().slice(0, 10);
+  const end = previousSunday.toISOString().slice(0, 10);
+  return { start, end, label: `${start} - ${end}` };
 }
 
 function PaperCard({

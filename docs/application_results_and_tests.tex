@@ -1,0 +1,257 @@
+\section{Uygulama Sonuçları ve Testler (Application Results and Tests)}
+
+\subsection{Değerlendirme Sürecine Genel Bakış}
+Bu bölümde, geliştirilen akademik yayın istihbarat ve analiz platformunun uçtan uca değerlendirilmesi amacıyla yürütülen test süreci ve elde edilen deneysel sonuçlar sunulmaktadır. Değerlendirme süreci; veri toplama ve temizleme aşamalarından başlayarak, vektör yerleştirme (embedding) üretimi, konu kümeleme (topic clustering), RAG tabanlı soru-cevap asistanı, kaynak gösterim doğruluğu, sistem entegrasyonu ve performans analizlerini kapsayacak şekilde çok boyutlu olarak tasarlanmıştır. Bu kapsamda platformun akademik literatür arama ve bilgi çıkarma hedeflerini ne ölçüde karşıladığı ölçülebilir metrikler ve hata analizleriyle ortaya konulmuştur.
+
+\subsection{Deney Ortamı}
+Platformun test ve değerlendirme aşamalarında kullanılan donanım ve yazılım bileşenleri ile deneysel ortam özellikleri Tablo~\ref{tab:deney_ortami}'de özetlenmiştir. Sistem bileşenlerinin tamamı yerel veri gizliliği ve yerel yürütme kısıtlarına uygun olarak yerel bir geliştirme ortamında çalıştırılmıştır.
+
+\begin{table}[H]
+\centering
+\caption{Deney Ortamı}
+\label{tab:deney_ortami}
+\begin{tabular}{ll}
+\hline
+Bileşen & Kullanılan Teknoloji \\
+\hline
+Sunucu Katmanı (Backend) & FastAPI (Python 3.11) \\
+Kullanıcı Arayüzü (Frontend) & React, Vite, TypeScript, Tailwind CSS \\
+Veritabanı (Database) & PostgreSQL 15 + pgvector \\
+Vektör Yerleştirme Modeli (Embedding) & intfloat/multilingual-e5-base (768 Boyutlu) \\
+Konu Kümeleme Yöntemi (Clustering) & BERTopic (UMAP, HDBSCAN, c-TF-IDF) \\
+Dil Modeli Çalıştırma Ortamı & Ollama \\
+Büyük Dil Modeli (LLM) & gemma4:e4b (Ollama Yerel Çıkarım) \\
+Geliştirme ve Test Ortamı & macOS (TODO: İşletim sistemi detayları ve donanım bilgisi) \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsection{Veri Hazırlama Sonuçları}
+Platformun veri hattı, arXiv (özellikle Bilgisayar Bilimleri `cs.*` kategorisi) başta olmak üzere dış kaynaklardan ham verileri toplamakta, temizlemekte ve veritabanına kaydetmektedir. Veri hazırlama sürecindeki filtreleme ve temizleme adımlarına ait istatistiksel sonuçlar Tablo~\ref{tab:veri_hazirlama}'de yer almaktadır. Temizleme adımlarında bilgisayar bilimleri dışındaki yayınlar, abstract alanı eksik olanlar veya çok kısa metne sahip düşük kaliteli yayınlar elenmiştir.
+
+\begin{table}[H]
+\centering
+\caption{Veri Hazırlama Sonuçları}
+\label{tab:veri_hazirlama}
+\begin{tabular}{lr}
+\hline
+İşlem Adımı & Makale Sayısı \\
+\hline
+Toplanan ham makale sayısı & TODO \\
+Silinen tekrar kayıt sayısı & TODO \\
+Eksik abstract nedeniyle silinen kayıt sayısı & TODO \\
+Kısa veya düşük kaliteli metin nedeniyle silinen kayıt sayısı & TODO \\
+Son temiz makale sayısı & 300.000 \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsection{Embedding ve Vektör Depolama Sonuçları}
+Semantik arama ve RAG süreçlerinin temelini oluşturan makale embedding verileri, temizlenmiş metinler üzerinden oluşturularak PostgreSQL veritabanında `pgvector` eklentisiyle saklanmaktadır. Her makale için başlık bilgisi iki kez yinelenip, abstract metninin ilk 250 kelimesiyle birleştirilerek yerleştirme girdisi hazırlanmıştır. E5 modelinin asimetrik retrieval yapısı gereği doküman metinlerine ``passage: '' ön eki eklenmiştir. Vektör depolama sürecine dair özet bilgiler Tablo~\ref{tab:embedding_ve_vektor_depolama}'de sunulmuştur.
+
+\begin{table}[H]
+\centering
+\caption{Embedding ve Vektör Depolama Sonuçları}
+\label{tab:embedding_ve_vektor_depolama}
+\begin{tabular}{lr}
+\hline
+Parametre / Sonuç & Değer \\
+\hline
+Yerleştirme Modeli & intfloat/multilingual-e5-base \\
+Vektör Boyutu & 768 \\
+Embedding Üretilen Makale Sayısı & 299.638 \\
+Toplu İşlem (Batch) Boyutu & 1.000 \\
+Başarısız / Hatalı Kayıt Sayısı & 362 \\
+Veritabanında Depolanan Toplam Vektör & 299.638 \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsection{Konu Kümeleme Sonuçları}
+Platformdaki akademik yayınların konu bazlı otomatik gruplandırılması amacıyla BERTopic kütüphanesi kullanılmıştır. Kümeleme işlemi denetimsiz (unsupervised) bir öğrenme süreci olduğundan, elde edilen kümelerin kalitesi doğrudan insan etiketli bir veriyle doğrulanmak yerine içsel (internal) kümeleme metrikleri kullanılarak değerlendirilmiştir. Tablo~\ref{tab:kumeleme_sonuclari}'de kümeleme başarım metrikleri özetlenmiştir.
+
+\begin{table}[H]
+\centering
+\caption{Konu Kümeleme Değerlendirme Sonuçları}
+\label{tab:kumeleme_sonuclari}
+\begin{tabular}{lr}
+\hline
+Metrik & Değer \\
+\hline
+Kümeleme için kullanılan makale sayısı & 177.052 \\
+Üretilen konu (küme) sayısı & 491 \\
+Gürültü (Outlier) olarak işaretlenen makale sayısı & 122.586 \\
+Topic coherence (Konu Tutarlılık) skoru & TODO \\
+Silhouette skoru & 0,0315 \\
+Davies-Bouldin indeksi & 4,3493 \\
+Calinski-Harabasz skoru & 100,4687 \\
+Ortalama Küme İçi Cosine Benzerliği (Avg Intra-Cluster Cosine Similarity) & 0,8483 \\
+Ortalama Merkez Benzerliği (Avg Centroid Similarity) & 0,9206 \\
+Medyan Küme Boyutu & 222,0 \\
+En Büyük Kümenin Oranı & \%2,27 \\
+\hline
+\end{tabular}
+\end{table}
+
+Değerlendirilen metriklerin teknik açıklamaları şu şekildedir:
+\begin{itemize}
+    \item \textbf{Silhouette Skoru:} Bir makalenin kendi kümesine olan benzerliği ile en yakın diğer kümeye olan benzerliğini karşılaştırır. Cosine mesafesiyle ölçülen $0,0315$ değeri, kümelerin hafif düzeyde ayrıştığını ancak sınır bölgelerinde bir miktar örtüşme olduğunu göstermektedir.
+    \item \textbf{Davies-Bouldin İndeksi:} Kümelerin içsel yayılımlarının, kümeler arası merkez uzaklığına olan oranını ölçer. Düşük değerler daha iyi kümelemeyi gösterir; elde edilen $4,3493$ değeri veri kümesinin yüksek boyutu ve iç içe geçmiş disiplinler arası yapısıyla uyumludur.
+    \item \textbf{Ortalama Küme İçi Cosine Benzerliği:} Aynı küme içindeki makale çiftlerinin embedding vektörleri arasındaki ortalama cosine benzerliğidir. $0,8483$ değeri, kümelerin kendi içerisinde anlamsal olarak son derece tutarlı olduğunu doğrulamaktadır.
+    \item \textbf{Ortalama Merkez Benzerliği:} Makalelerin kendi kümelerinin merkez noktasına (centroid) olan ortalama cosine mesafesidir. $0,9206$ değeri, konu merkezlerinin makaleleri yüksek oranda temsil ettiğini göstermektedir.
+\end{itemize}
+
+\subsection{RAG Tabanlı Soru-Cevap Sonuçları}
+Platformun en kritik bileşenlerinden biri olan RAG (Retrieval-Augmented Generation) akışı şu adımlardan oluşmaktadır:
+Kullanıcı Sorusu $\rightarrow$ Yönlendirme (Routing) $\rightarrow$ Sorgunun Yeniden Yazılması $\rightarrow$ Metadata Filtreleme $\rightarrow$ Vektör/Hibrid Arama $\rightarrow$ Yeniden Sıralama (Reranking) $\rightarrow$ Bağlam Oluşturma $\rightarrow$ Cevap Üretimi ve Atıf.
+
+Sürecin çalışmasını göstermek adına hazırlanan örnek bir senaryo akışı Tablo~\ref{tab:rag_akisi}'de gösterilmiştir.
+
+\begin{table}[H]
+\centering
+\caption{Örnek RAG Akışı}
+\label{tab:rag_akisi}
+\begin{tabular}{lp{10cm}}
+\hline
+Adım & Örnek İçerik / Değer \\
+\hline
+Kullanıcı Sorusu & LLM modellerinde uzun bağlam (context) yönetimi KV cache sıkıştırmasıyla nasıl optimize edilir? \\
+Yeniden Yazılan Sorgu & How can an LLM handle very long contexts by compressing the key-value cache while keeping the most recent tokens accurate? \\
+Filtreler & \{ ``primary\_category'': ``cs.CL'', ``publish\_year'': 2024 \} \\
+Getirilen Kaynaklar & [S1] ID: 162774 - ``KV-Cache Compression Methods for Multi-intent Transformers'' \\
+Cevap Özeti & KV (Key-Value) önbellek sıkıştırması, dikkat (attention) mekanizmasında gereksiz veya düşük ağırlıklı token'ların önbellekten silinmesiyle sağlanır. En son token'ların doğruluğunu korumak için kayan pencere (sliding window) veya dikkat ağırlığına dayalı dinamik budama algoritmaları kullanılır [S1]. \\
+Atıf Biçimi & [S1] \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsection{Golden Set ile Değerlendirme}
+RAG sisteminin doğruluğunu ölçmek adına 10 adet zor ve orta seviye çoklu niyet (multi-intent) içeren sorulardan oluşan bir ``Golden Set'' (Altın Soru Kümesi) oluşturulmuştur. Bu soru kümesi şu kategorileri içermektedir:
+\begin{itemize}
+    \item \textbf{Exact Paper Lookup (Doğrudan Makale Arama):} Belirli bir yöntemi veya makaleyi hedefleyen sorular.
+    \item \textbf{Semantic Topic Search (Semantik Konu Arama):} Kavramsal aramalar.
+    \item \textbf{Metadata/Filter Question (Metadata Filtreli Sorular):} Belirli yıl veya kategori kısıtlı sorular.
+    \item \textbf{Comparative Question (Karşılaştırmalı Sorular):} Birden fazla yaklaşımı kıyaslayan sorular.
+    \item \textbf{Follow-up Memory Question (Takip Soruları):} Sohbet geçmişine dayalı ardışık sorular.
+    \item \textbf{Out-of-domain Question (Kapsam Dışı Sorular):} Platform dışı genel sorular.
+\end{itemize}
+
+Farklı sistem konfigürasyonlarının bu golden set üzerindeki getirme (retrieval) başarı oranları karşılaştırmalı olarak Tablo~\ref{tab:retrieval_metrikleri}'de verilmiştir. 
+
+\begin{table}[H]
+\centering
+\caption{Golden Set Retrieval Sonuçları}
+\label{tab:retrieval_metrikleri}
+\begin{tabular}{lrrrr}
+\hline
+Metrik & Mevcut Durum (Baseline) & Sadece Dense (Vektör) & Hibrid Arama (Dense+BM25) & Uçtan Uca RAG \\
+\hline
+Hit@1 & \%0,0 & \%0,0 & \%0,0 & \%90,0 \\
+Hit@3 & \%0,0 & \%0,0 & \%0,0 & \%90,0 \\
+Hit@5 & \%0,0 & \%80,0 & \%80,0 & \%90,0 \\
+Recall@5 & \%0,0 & \%80,0 & \%80,0 & \%90,0 \\
+MRR & 0,00 & 0,70 & 0,70 & 0,90 \\
+Ortalama Gecikme & 0,09 ms & 92,51 ms & 117,51 ms & 36.439,56 ms \\
+\hline
+\end{tabular}
+\end{table}
+
+Tabloya göre, RAG anahtar kelimelerini içermediği için aramayı bypass eden deterministik yönlendirici nedeniyle mevcut baseline sıfır başarı göstermiştir. Yönlendirici engeli aşılıp vektör araması aktif hale getirildiğinde Hit@5 \%80'e yükselmiş, uçtan uca RAG akışında sorguların yeniden yazılması ve yeniden sıralama yapılmasıyla Hit@5 oranı \%90'a ulaşmıştır.
+
+Cevapların doğruluğu ve kaynak gösteriminin kalitesi ise Tablo~\ref{tab:citation_quality}'de verilmiştir.
+
+\begin{table}[H]
+\centering
+\caption{Kaynak Gösterimi ve Cevap Kalitesi Sonuçları (Uçtan Uca RAG)}
+\label{tab:citation_quality}
+\begin{tabular}{lr}
+\hline
+Metrik & Skor \\
+\hline
+Citation Precision (Kaynak Gösterim Hassasiyeti) & 0,8333 (\%83,3) \\
+Citation Recall (Kaynak Gösterim Duyarlılığı) & 0,9000 (\%90,0) \\
+Grounded Answer Ratio (Kaynağa Dayalı Cevap Oranı) & TODO \\
+Unsupported Answer Ratio (Desteksiz İddia Oranı) & TODO \\
+Manuel Cevap Skoru & TODO \\
+\hline
+\end{tabular}
+\end{table}
+
+Kullanılan metriklerin açıklamaları aşağıda sunulmuştur:
+\begin{itemize}
+    \item \textbf{Hit@k:} İlk k arama sonucunda, beklenen ilgili dokümanlardan en az birinin yer alma oranıdır.
+    \item \textbf{Recall@k:} İlgili dokümanların ne kadarının ilk k sonuç içerisinde yakalanabildiğidir.
+    \item \textbf{MRR (Mean Reciprocal Rank):} Doğru belgenin arama listesindeki sırasının çarpmaya göre tersinin ortalamasıdır. MRR'ın $0,90$ olması, doğru sonuçların genellikle 1. veya 2. sırada yer aldığını göstermektedir.
+    \item \textbf{Citation Precision:} Cevap içinde kullanılan atıfların ne kadarının getirilen kaynak belgelerle gerçekten uyumlu ve doğru olduğudur. \%83,3 değeri yüksek bir kaynak sadakatini göstermektedir.
+    \item \textbf{Citation Recall:} İlgili kaynak belgelerdeki bilgilerin ne kadarının cevap içerisinde atıf verilerek eridiğini gösterir.
+\end{itemize}
+
+\subsection{Sistem ve Entegrasyon Testleri}
+Platformu oluşturan FastAPI servisleri, React ön yüzü, PostgreSQL veri katmanı ve yerel Ollama yapay zeka çıkarım sunucusunun birbiriyle entegrasyonu test edilmiştir. Yapılan entegrasyon test senaryoları Tablo~\ref{tab:entegrasyon_testleri}'de listelenmiştir.
+
+\begin{table}[H]
+\centering
+\caption{Sistem ve Entegrasyon Testleri}
+\label{tab:entegrasyon_testleri}
+\begin{tabular}{llp{7cm}l}
+\hline
+Test Tipi & Test Edilen Bileşen & Beklenen Davranış & Durum \\
+\hline
+Uç Nokta Entegrasyonu & FastAPI API endpoints & API isteklerinin HTTP 200 kodlu geçerli JSON döndürmesi & Başarılı \\
+Arayüz Veri Sunumu & React Components & Konu kümeleri ve RAG yanıtlarının ekranda doğru render edilmesi & Başarılı \\
+Vektör Veritabanı & PostgreSQL + pgvector & L2/Cosine mesafe sorgularının zaman aşımına uğramadan dönmesi & Başarılı \\
+Model Çıkarım Hattı & Ollama API & Yerel dil modelinin atıf talimatlarına uygun metin üretmesi & Başarılı \\
+Yönlendirici Kapısı & RAG Router & Sorgu bilimsel niyet taşıdığında RAG'in otomatik tetiklenmesi & Başarılı \\
+Arama Birleştirme & Retrieval Service & Dense ve BM25 sonuçlarının RRF ile doğru harmanlanması & Başarılı \\
+Sohbet Belleği & Chat Memory & Ardışık sorularda eski soru zamirlerinin doğru çözümlenmesi & Başarılı \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsection{Performans Sonuçları}
+Sistemde ölçülen veya planlanan performans değerleri Tablo~\ref{tab:performans_degerleri}'de listelenmiştir.
+
+\begin{table}[H]
+\centering
+\caption{Sistem Performans Sonuçları}
+\label{tab:performans_degerleri}
+\begin{tabular}{lr}
+\hline
+Metrik / İşlem & Ortalama Süre \\
+\hline
+Ortalama RAG Yanıt Süresi (Inference Latency) & 36,44 s \\
+Vektör Getirme Süresi (Vector Search SQL) & 92,51 ms \\
+Hibrid Getirme ve RRF Birleştirme Süresi & 117,51 ms \\
+Embedding Üretim Süresi (Her Batch İçin) & TODO \\
+Konu Kümeleme Yürütme Süresi (Clustering Run) & TODO \\
+Kontrol Paneli Yüklenme Süresi (Dashboard Load) & TODO \\
+\hline
+\end{tabular}
+\end{table}
+
+Performans sonuçlarındaki en önemli bulgu, yerel Ollama üzerinde yürütülen dil modeli çıkarım süresidir (ortalama 36,44 saniye). Bu yüksek süre, yerel GPU/CPU kısıtlarından kaynaklanmakta olup, bilgi getirme aşamasının (117,51 ms) sisteme getirdiği ek yükün oldukça düşük olduğunu ortaya koymaktadır.
+
+\subsection{Hata Analizi}
+Değerlendirme süreçlerinde karşılaşılan hatalar ve başarısızlıklar incelendiğinde, hataların sistemsel bileşenlere göre dağılımı aşağıdaki kategoriler altında toplanmıştır:
+\begin{enumerate}
+    \item \textbf{Yönlendirme Hataları (Router Error):} Kullanıcı sorusunun RAG gerektirmesine rağmen yönlendirici tarafından bypass edilmesi (baseline sistemdeki en büyük hata kaynağı).
+    \item \textbf{Sorgu Yeniden Yazma Hataları (Query Rewriting Error):} Çoklu kavram içeren sorularda dil modelinin bazı anahtar kelimeleri eksik veya hatalı İngilizce çeviriyle yeniden yazması.
+    \item \textbf{Filtre Çıkarma Hataları (Filter Extraction Error):} Tarih aralığı ya da kategori kısıtlarının SQL sorgusuna yansıtılamaması veya çok katı (hard-filter) uygulanarak doğru makaleleri dışarıda bırakması.
+    \item \textbf{Bilgi Getirme Kaçırmaları (Retrieval Miss):} İlgili makalenin veritabanında yer almasına rağmen embedding vektör hizalamasındaki sapmalar (E5 modelinin ``passage:'' ön eki olmadan indekslenmiş olması gibi durumlar) nedeniyle ilk 5 arama sonucuna girememesi.
+    \item \textbf{Yeniden Sıralama Hataları (Reranking Error):} Atıf sayısı ve yayın yılı gibi bonusların, semantik benzerliğin önüne geçerek alakasız popüler yayınları öne çıkarması.
+    \item \textbf{Atıf ve Kaynak Gösterim Hataları (Citation Error):} Dil modelinin cevabı doğru üretmesine rağmen, atıf etiketini ([S1]) yanlış makale kimliğiyle eşleştirmesi veya metinde hiç atıf kullanmaması.
+    \item \textbf{Cevap Üretim Hataları (Generation Error / Hallucination):} Modelin getirilen bağlamın dışına çıkarak kendi ağırlıklarındaki bilgiyi doğruymuş gibi sunması.
+    \item \textbf{Bellek ve Takip Hataları (Conversation Memory Error):} Sohbetin 5. veya 6. adımından sonra eski bağlamların birikerek bağlam penceresini şişirmesi ve asıl sorunun kaybolması.
+\end{enumerate}
+
+\subsection{Sınırlılıklar}
+Geliştirilen platformun değerlendirilmesinde ve operasyonel kullanımında karşılaşılan başlıca sınırlılıklar şunlardır:
+\begin{itemize}
+    \item \textbf{Kısıtlı Golden Set Boyutu:} Hazırlanan değerlendirme kümesinin 10 soruyla sınırlı olması, istatistiksel genellenebilirliği kısıtlamaktadır. Daha geniş ve dengeli bir test kümesine ihtiyaç duyulmaktadır.
+    \item \textbf{Denetimsiz Kümeleme Yapısı:} Konu kümelemesinde yer alan sınıflar için önceden belirlenmiş ``doğru etiketler'' (ground-truth) bulunmadığından, başarım sadece içsel mesafe metrikleriyle ölçülmüştür. Kümelerin anlamsal kalitesi uzman görüşüyle denetlenmelidir.
+    \item \textbf{Yerel Kaynak Kısıtları:} Ollama ve yerel model kullanımı veri gizliliği sağlasa da, çıkarım süresini (36,44 saniye) kabul edilebilir sınırların üzerine çıkarmakta ve eşzamanlı kullanıcı sayısını sınırlamaktadır.
+    \item \textbf{Tam Metin Eksikliği:} Veritabanında sadece başlık ve özet (abstract) bilgilerinin bulunması, yayınların içindeki detaylı formüller, tablolar ve deney sonuçları gibi derinlemesine teknik soruların cevaplanmasını engellemektedir.
+\end{itemize}
+
+\subsection{Genel Değerlendirme}
+Bu çalışma kapsamında geliştirilen akademik yayın analiz ve soru-cevap platformu; veri toplama, temizleme, yerleştirme üretimi, konu kümeleme, semantik/hibrid arama ve büyük dil modeliyle entegre cevap üretimi katmanlarının tamamını başarıyla hayata geçirmiştir. Yürütülen testler, RAG yönlendirici ve semantik hizalama (ön ek düzeltmesi) adımlarının getirme başarımını \%0'dan \%90 seviyelerine çıkardığını deneysel olarak göstermiştir. Yapılan entegrasyon ve performans testleri sistemin kararlı çalıştığını doğrulamakla birlikte, yerel dil modeli çıkarım sürelerinin iyileştirilmesi ve tam metin aramasına geçilmesi gibi geliştirme alanlarını da belirginleştirmiştir.

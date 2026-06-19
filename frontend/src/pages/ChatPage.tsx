@@ -9,6 +9,7 @@ import {
   Clock3,
 } from "lucide-react";
 import { ensureOk, getBackendBaseUrl, normalizeUnknownError } from "../api/client";
+import { MarkdownContent } from "../components/MarkdownContent";
 import { clearStoredUser, getAuthHeaders, getStoredUser } from "../lib/auth";
 
 interface Message {
@@ -187,7 +188,7 @@ export default function ChatPage() {
       setIsTyping(false);
       setStatusText("Response timed out.");
       clearInactivityTimer();
-    }, 100000);
+    }, 150000);
   };
 
   const sendMessage = async (
@@ -356,108 +357,6 @@ export default function ChatPage() {
     }
   };
 
-  const renderMarkdown = (text: string) => {
-    if (!text) return null;
-    const lines = text.split("\n");
-    return lines.map((line, idx) => {
-      if (line.trim().startsWith("- ") || line.trim().startsWith("* ")) {
-        return (
-          <li key={idx} className="ml-4 list-disc text-sm my-1 pl-1">
-            {parseInlineMarkdown(line.trim().substring(2))}
-          </li>
-        );
-      }
-
-      const headingMatch = line.match(/^(#{1,6})\s+(.*)$/);
-      if (headingMatch) {
-        const level = headingMatch[1].length;
-        const content = headingMatch[2];
-        const HeadingTag = `h${level}` as keyof JSX.IntrinsicElements;
-        const classes =
-          [
-            "font-semibold text-[var(--text-primary)] my-3 text-xl leading-snug",
-            "font-semibold text-[var(--text-primary)] my-2 text-lg leading-snug",
-            "font-semibold text-[var(--text-primary)] my-1.5 text-base leading-snug",
-          ][level - 1] ||
-          "font-semibold text-[var(--text-primary)] my-1.5 text-base leading-snug";
-        return (
-          <HeadingTag key={idx} className={classes}>
-            {parseInlineMarkdown(content)}
-          </HeadingTag>
-        );
-      }
-
-      return (
-        <p
-          key={idx}
-          className="min-h-[1.5rem] text-[15px] leading-[1.6] my-1 text-[var(--text-secondary)]"
-        >
-          {parseInlineMarkdown(line)}
-        </p>
-      );
-    });
-  };
-
-  const parseInlineMarkdown = (text: string) => {
-    const parts: Array<string | JSX.Element> = [];
-    const regex =
-      /(https?:\/\/[^\s<>()]+[^\s<>().,;:!?])|(\*\*|__)(.*?)\2|(\*|_)(.*?)\4|(`)(.*?)\6/g;
-    let match: RegExpExecArray | null;
-    let lastIndex = 0;
-
-    while ((match = regex.exec(text)) !== null) {
-      if (match.index > lastIndex) {
-        parts.push(text.substring(lastIndex, match.index));
-      }
-
-      if (match[1]) {
-        parts.push(
-          <a
-            key={`a-${match.index}`}
-            href={match[1]}
-            target="_blank"
-            rel="noreferrer"
-            className="break-words font-medium text-[var(--text-primary)] underline decoration-[var(--text-muted)] underline-offset-4 transition hover:decoration-[var(--text-primary)]"
-          >
-            {match[1]}
-          </a>,
-        );
-      } else if (match[3]) {
-        parts.push(
-          <strong
-            key={`b-${match.index}`}
-            className="font-semibold text-[var(--text-primary)]"
-          >
-            {match[3]}
-          </strong>,
-        );
-      } else if (match[5]) {
-        parts.push(
-          <em key={`i-${match.index}`} className="italic">
-            {match[5]}
-          </em>,
-        );
-      } else if (match[7]) {
-        parts.push(
-          <code
-            key={`c-${match.index}`}
-            className="rounded bg-[var(--surface-elevated)] px-1.5 py-0.5 font-mono text-xs text-[var(--text-primary)] border border-[var(--border)]"
-          >
-            {match[7]}
-          </code>,
-        );
-      }
-
-      lastIndex = regex.lastIndex;
-    }
-
-    if (lastIndex < text.length) {
-      parts.push(text.substring(lastIndex));
-    }
-
-    return parts.length > 0 ? parts : text;
-  };
-
   const splitSources = (text: string) => {
     const match = text.match(/\n?(?:Sources|Kaynaklar):\s*/i);
     if (!match || typeof match.index !== "number") {
@@ -600,14 +499,14 @@ export default function ChatPage() {
                               const parsed = splitSources(message.content);
                               return (
                                 <>
-                                  {renderMarkdown(parsed.body)}
+                                  <MarkdownContent content={parsed.body} />
                                   {parsed.sources.length ? (
                                     <div className="mt-4 rounded-lg border border-[var(--border)] bg-[var(--surface-elevated)] p-3">
                                       <p className="mb-2 text-xs font-semibold uppercase tracking-[0.05em] text-[var(--text-muted)]">Sources</p>
                                       <div className="space-y-2">
                                         {parsed.sources.map((source, index) => (
                                           <div key={`${source}-${index}`} className="rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs text-[var(--text-secondary)]">
-                                            {parseInlineMarkdown(source)}
+                                            <MarkdownContent content={source} compact />
                                           </div>
                                         ))}
                                       </div>

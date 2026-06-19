@@ -84,6 +84,25 @@ def test_research_question_forms_from_golden_set_use_rag():
     assert all(route.use_rag for route in routes)
 
 
+def test_specific_golden_set_question_forms_use_rag():
+    questions = [
+        "Which work argues that KV cache compressibility is a learned representation property and trains transformers toward more compressible internal states?",
+        "Which image generation approach simulates photo-realistic floods on user-provided photos by combining simulated and real data through unsupervised domain adaptation?",
+        "What LLM-agent system decides whether a web attack requires a new intrusion detection rule or a repair to an existing signature?",
+        "Which practical study converts fake low-precision quantization into true 8-bit GPU inference for 3D medical segmentation networks such as U-Net and SwinUNETR?",
+        "Which CI/CD framework performs token-efficient log preprocessing, root-cause analysis, retrieval of historical fixes, and tool-calling based remediation?",
+        "Which Arabic NLP dataset and metric treats dialectness as a continuous sentence-level variable rather than binary dialect identification?",
+        "Which IoT networking architecture for constrained devices offers modular interfaces, heterogeneous protocol stacks, and GNRC as a cleanly layered default stack?",
+        "Which survey reviews code-switched NLP in the LLM era across modalities, many languages, datasets, tasks, and evaluation biases?",
+        "Which LLM training approach improves algorithm execution by supervised reasoning decomposition and is applied to an arithmetic function?",
+        "Which BabyLM study finds larger GPT-like models can improve linguistic benchmarks while fitting human reading-time measures worse?",
+    ]
+
+    routes = [RagRouterService().fallback_route(question, []) for question in questions]
+
+    assert all(route.use_rag for route in routes)
+
+
 def test_recent_token_question_uses_relevance_sort():
     question = (
         "How can an LLM handle very long contexts by compressing the key-value cache "

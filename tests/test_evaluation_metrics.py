@@ -13,6 +13,11 @@ from backend.app.evaluation.retrieval_metrics import (
     score_retrieval,
     summarize_retrieval_results,
 )
+from backend.app.evaluation.rag_golden_set import (
+    calculate_metrics,
+    extract_cited_article_ids,
+    load_validated_golden_set,
+)
 from backend.app.evaluation.schemas import GoldenQuestion
 from backend.app.schemas.retrieval import RetrievedArticle
 from backend.app.schemas.source import SourceReference
@@ -37,12 +42,75 @@ def test_retrieval_metric_math_and_duplicate_deduplication():
     assert scores["ndcg_at_k"] == pytest.approx(expected_dcg / expected_idcg)
 
 
+def test_rag_golden_set_citation_and_answer_metrics():
+    retrieved = [
+        RetrievedArticle(source=SourceReference(source_id="S1", article_id=10, title="Paper 10")),
+        RetrievedArticle(source=SourceReference(source_id="S2", article_id=20, title="Paper 20")),
+    ]
+    cited_ids = extract_cited_article_ids("Paper 10 is relevant [S1]. Paper 20 is background [S2].", retrieved)
+    question = GoldenQuestion(
+        id="q1",
+        question="Find papers about RAG",
+        expected_article_ids=[10],
+        expected_answer_keywords=["relevant"],
+        top_k=2,
+    )
+
+    metrics = calculate_metrics(
+        question=question,
+        retrieved_article_ids=[10, 20],
+        cited_article_ids=cited_ids,
+        answer="Paper 10 is relevant [S1]. Paper 20 is background [S2].",
+        top_k=2,
+    )
+
+    assert cited_ids == [10, 20]
+    assert metrics["hit_at_1"] is True
+    assert metrics["hit_at_3"] is True
+    assert metrics["citation_precision"] == pytest.approx(0.5)
+    assert metrics["citation_recall"] == pytest.approx(1.0)
+    assert metrics["answer_keyword_coverage"] == pytest.approx(1.0)
+
+
 def test_empty_expected_set_raises_validation_error():
     with pytest.raises(ValueError, match="expected_article_ids"):
         GoldenQuestion(id="bad", question="paper?", expected_article_ids=[])
 
     with pytest.raises(ValueError, match="expected_article_ids"):
         score_retrieval([], [1], top_k=5)
+
+
+def test_golden_question_supports_plan_fields_and_question_id_alias():
+    question = GoldenQuestion(
+        question_id="q-out",
+        question="Give me a dinner recipe.",
+        expected_article_ids=[],
+        requires_retrieval=False,
+        question_type="out_of_domain",
+        expected_answer_keywords=["academic publication assistant"],
+    )
+
+    assert question.id == "q-out"
+    assert question.question_type == "out_of_domain"
+    assert question.expected_answer_keywords == ["academic publication assistant"]
+
+
+def test_load_validated_golden_set_rejects_duplicate_ids(tmp_path):
+    path = tmp_path / "golden.json"
+    path.write_text(
+        json.dumps(
+            {
+                "questions": [
+                    {"id": "q1", "question": "Find RAG papers", "expected_article_ids": [10]},
+                    {"id": "q1", "question": "Find dense retrieval papers", "expected_article_ids": [11]},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="Duplicate golden question ids"):
+        load_validated_golden_set(path)
 
 
 def test_clustering_evaluator_skips_when_fewer_than_two_clusters():

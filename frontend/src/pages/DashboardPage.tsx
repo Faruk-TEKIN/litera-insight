@@ -8,6 +8,7 @@ import {
 import { Database, Filter, FileText, Layers, Search, TrendingUp, type LucideIcon } from 'lucide-react';
 import { getBackendBaseUrl } from '../api/client';
 import { LoadingState, StateMessage } from '../components/ui';
+import { categoryLabel } from '../lib/categoryLabels';
 
 interface BarDatum {
   name: string;
@@ -112,7 +113,6 @@ export default function DashboardPage() {
   const [data, setData] = useState<AnalyticsPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [sourceFilter, setSourceFilter] = useState('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [period, setPeriod] = useState<PeriodValue>('12m');
   const [clusterSearch, setClusterSearch] = useState('');
@@ -127,7 +127,6 @@ export default function DashboardPage() {
       setLoading(true);
       try {
         const params = new URLSearchParams();
-        if (sourceFilter !== 'all') params.set('source', sourceFilter);
         if (categoryFilter !== 'all') params.set('category', categoryFilter);
         params.set('period', period);
 
@@ -153,7 +152,7 @@ export default function DashboardPage() {
 
     fetchData();
     return () => controller.abort();
-  }, [backendBaseUrl, categoryFilter, period, sourceFilter]);
+  }, [backendBaseUrl, categoryFilter, period]);
 
   if (loading && !data) {
     return <LoadingState label="Loading analytics..." />;
@@ -183,7 +182,6 @@ export default function DashboardPage() {
   const weeklyPicks = metrics.weeklyPicks || 0;
   const clusterQuality = data.clusterQuality || {};
   const risingTopics: RisingTopic[] = data.risingTopics || [];
-  const sourceOptions = (data.sourceDistribution || []) as DistributionItem[];
   const categoryOptions = (data.categoryDistribution || []) as DistributionItem[];
   const trendSeries = (data.clusterTrendSeries || []) as TrendSeriesItem[];
   const topClusterPaperCount = barData[0]?.papers || 0;
@@ -230,21 +228,12 @@ export default function DashboardPage() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <FilterSelect
-              label="Source"
-              value={sourceFilter}
-              onChange={setSourceFilter}
-              options={sourceOptions.map((item) => ({
-                value: item.source || 'unknown',
-                label: `${item.source || 'unknown'} (${item.count})`,
-              }))}
-            />
-            <FilterSelect
               label="Category"
               value={categoryFilter}
               onChange={setCategoryFilter}
               options={categoryOptions.map((item) => ({
                 value: item.category || 'unknown',
-                label: `${item.category || 'unknown'} (${item.count})`,
+                label: `${categoryLabel(item.category)} (${item.count})`,
               }))}
             />
             <PeriodControl value={period} onChange={setPeriod} />
@@ -271,7 +260,7 @@ export default function DashboardPage() {
 
         {totalPapers === 0 && (
           <div className="rounded-lg border border-[var(--warning)] bg-[var(--warning-soft)] px-4 py-3 text-sm text-[var(--warning)]">
-            No articles match the selected filters. Adjust source, category, or period to widen the analytics window.
+            No articles match the selected filters. Adjust category or period to widen the analytics window.
           </div>
         )}
 

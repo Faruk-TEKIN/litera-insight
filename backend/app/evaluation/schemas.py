@@ -1,21 +1,33 @@
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class GoldenQuestion(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
-    id: str
+    id: str = Field(validation_alias=AliasChoices("id", "question_id"))
     question: str
-    expected_article_ids: list[int]
+    expected_article_ids: list[int] = Field(default_factory=list)
     expected_cluster_ids: list[int] = Field(default_factory=list)
+    expected_title: str | None = None
+    expected_outcome: str | None = None
+    query_type: str | None = None
+    question_type: str | None = None
+    difficulty: str | None = None
+    expected_answer_keywords: list[str] = Field(default_factory=list)
+    expected_filters: dict = Field(default_factory=dict)
+    requires_retrieval: bool = True
+    is_multi_turn: bool = False
+    scenario_id: str | None = None
+    turn_index: int | None = None
+    notes: str | None = None
     filters: dict = Field(default_factory=dict)
     top_k: int | None = None
 
-    @field_validator("expected_article_ids")
+    @field_validator("expected_article_ids", "expected_cluster_ids", "expected_answer_keywords", mode="before")
     @classmethod
-    def _expected_articles_required(cls, value: list[int]) -> list[int]:
-        if not value:
-            raise ValueError("expected_article_ids must contain at least one article id.")
+    def _none_to_empty_list(cls, value):
+        if value is None:
+            return []
         return value
 
     @field_validator("top_k")
@@ -24,6 +36,16 @@ class GoldenQuestion(BaseModel):
         if value is not None and value < 1:
             raise ValueError("top_k must be greater than zero.")
         return value
+
+    @model_validator(mode="after")
+    def _validate_evaluation_contract(self):
+        if self.requires_retrieval and not self.expected_article_ids:
+            raise ValueError("expected_article_ids must contain at least one article id.")
+        if self.is_multi_turn and (not self.scenario_id or self.turn_index is None):
+            raise ValueError("multi-turn questions require scenario_id and turn_index.")
+        if self.turn_index is not None and self.turn_index < 1:
+            raise ValueError("turn_index must be greater than zero.")
+        return self
 
 
 class RetrievalEvalResult(BaseModel):

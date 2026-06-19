@@ -54,8 +54,10 @@ ACADEMIC_SEARCH_PATTERNS = (
     r"\banalysis\s+of\b",
     r"\bnumerical\s+analysis\s+for\b",
     r"^how\s+can\s+.+\b(?:llms?|nlp|sql|gpu|iot|rag|cache|agent|agents|benchmark|framework|method|architecture|model|models|inference|quantization|segmentation|intrusion|detection|pipeline|logs?|dialectness)\b",
-    r"^which\s+(?:approach|benchmark|method|framework|architecture)\b",
-    r"^what\s+(?:framework|practical\s+method|networking\s+architecture|benchmark|approach|method)\b",
+    r"^which\s+.+\b(?:approach|benchmark|method|framework|architecture|work|paper|model|system|tool|study|survey|review|dataset|network)\b",
+    r"^which\s+(?:approach|benchmark|method|framework|architecture|work|paper|model|system|tool|study|survey|review|dataset|network)\b",
+    r"^what\s+(?:framework|practical\s+method|practical\s+study|networking\s+architecture|benchmark|approach|method|model|system|tool|dataset|paper)\b",
+    r"^what\s+[\w-]+(?:\s+[\w-]+){0,3}\s+system\b",
 )
 
 class RagRouterService:

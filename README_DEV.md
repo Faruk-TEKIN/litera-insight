@@ -53,6 +53,27 @@ pytest tests
 Bu testler Ollama veya canli PostgreSQL gerektirmez; router fallback, retrieval filter SQL'i,
 conversation memory ve analytics response contract'ini kontrol eder.
 
+## RAG Golden Set Evaluation
+
+`evaluation/rag_golden_set_10_questions.json` dosyasi ile hizli retrieval-only test
+calistirmak icin:
+
+```bash
+.venv/bin/python scripts/run_rag_golden_set_evaluation.py --golden-file evaluation/rag_golden_set_10_questions.json --mode retrieval_only --top-k 5 --force-rag
+```
+
+Ayni golden set ile uc tan uca RAG cevabi, citation ve answer metric'lerini olcmek icin
+Ollama ve PostgreSQL ayaktayken:
+
+```bash
+.venv/bin/python scripts/run_rag_golden_set_evaluation.py --golden-file evaluation/rag_golden_set_10_questions.json --mode rag_end_to_end --top-k 5 --force-rag --temperature 0
+```
+
+Varsayilan cikti dizini `evaluation/runs/<run-id>` altindadir. Calisma sonunda
+`summary_results.csv`, `retrieval_metrics.json`, `citation_metrics.json`,
+`answer_review_sheet.csv`, `failure_analysis.md`, `report.md` ve `raw_outputs.jsonl`
+dosyalari uretilir.
+
 ## PostgreSQL ve Migration
 
 PostgreSQL tarafinda `vector` extension gerekir.

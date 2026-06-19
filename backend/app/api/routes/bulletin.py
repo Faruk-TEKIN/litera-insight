@@ -1,11 +1,12 @@
-from datetime import datetime
+from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from backend.app.core.database import get_db
-from backend.app.schemas.bulletin import BulletinPreferenceRequest
+from backend.app.schemas.bulletin import BulletinPreferenceRequest, WeeksBestBulletinRequest
 from backend.app.services.digest_service import DigestService
+from backend.app.services.bulletin_snapshot_service import BulletinSnapshotService, default_previous_week
 from backend.app.services.report_snapshot_service import DEFAULT_BULLETIN_LIMIT
 from backend.app.services.report_snapshot_service import ReportSnapshotService
 from backend.app.services.user_bulletin_service import UserBulletinService
@@ -53,6 +54,63 @@ def save_my_bulletin_preference(
     user: User = Depends(get_current_user),
 ):
     return UserBulletinService(db).save_preference(user.id, payload)
+
+
+@router.get("/bulletin/weeks-best/selections")
+def get_weeks_best_selections(
+    week_start: date | None = Query(default=None, description="Hafta baslangici, YYYY-MM-DD"),
+    week_end: date | None = Query(default=None, description="Hafta bitisi, YYYY-MM-DD"),
+    db: Session = Depends(get_db),
+):
+    if week_start is None or week_end is None:
+        week_start, week_end = default_previous_week()
+    return BulletinSnapshotService(db).selections(week_start=week_start, week_end=week_end)
+
+
+@router.get("/bulletin/weeks-best")
+def get_weeks_best_bulletin(
+    selection_type: str = Query(..., pattern="^(cluster|category)$"),
+    selection_id: str = Query(...),
+    week_start: date | None = Query(default=None, description="Hafta baslangici, YYYY-MM-DD"),
+    week_end: date | None = Query(default=None, description="Hafta bitisi, YYYY-MM-DD"),
+    generate_if_missing: bool = Query(default=False, description="Snapshot yoksa senkron uret"),
+    force_refresh: bool = Query(default=False, description="Snapshot'i yeniden uret"),
+    use_llm: bool = Query(default=False, description="Ollama ile editorial metin uret"),
+    db: Session = Depends(get_db),
+):
+    if week_start is None or week_end is None:
+        week_start, week_end = default_previous_week()
+    service = BulletinSnapshotService(db)
+    if generate_if_missing or force_refresh:
+        return service.get_or_generate(
+            selection_type=selection_type,
+            selection_id=selection_id,
+            week_start=week_start,
+            week_end=week_end,
+            force_refresh=force_refresh,
+            use_llm=use_llm,
+        )
+    return service.get_cached(
+        selection_type=selection_type,
+        selection_id=selection_id,
+        week_start=week_start,
+        week_end=week_end,
+    )
+
+
+@router.post("/bulletin/weeks-best/generate")
+def generate_weeks_best_bulletin(
+    payload: WeeksBestBulletinRequest,
+    db: Session = Depends(get_db),
+):
+    return BulletinSnapshotService(db).get_or_generate(
+        selection_type=payload.selection_type,
+        selection_id=payload.selection_id,
+        week_start=payload.week_start,
+        week_end=payload.week_end,
+        force_refresh=payload.force_refresh,
+        use_llm=payload.use_llm,
+    )
 
 
 @router.get("/bulletin")

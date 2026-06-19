@@ -124,7 +124,7 @@ export default function Layout() {
   };
 
   const sidebar = (
-    <aside className="flex h-full w-[260px] shrink-0 flex-col border-r border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)]">
+    <aside className="flex h-dvh max-h-dvh w-[260px] shrink-0 flex-col border-r border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)]">
       <div className="h-16 px-4 flex items-center justify-between border-b border-[var(--border)]">
         <button
           type="button"
@@ -183,13 +183,13 @@ export default function Layout() {
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 border-t border-[var(--border)] px-3 py-4">
+      <div className="flex min-h-0 flex-1 flex-col border-t border-[var(--border)] px-3 py-4">
         <div className="mb-3 flex items-center justify-between px-3">
           <span className="text-xs font-semibold uppercase tracking-[0.05em] text-[var(--text-muted)]">Chat sessions</span>
           <span className="text-xs text-[var(--text-muted)]">{sessions.length}</span>
         </div>
 
-        <div className="h-full space-y-1 overflow-y-auto pr-1">
+        <div className="min-h-0 flex-1 space-y-1 overflow-y-auto pr-1">
           {loadingSessions ? (
             <div className="flex items-center justify-center py-6">
               <div className="h-4 w-4 animate-spin rounded-full border-2 border-[var(--text-muted)] border-t-[var(--text-primary)]" />
@@ -267,8 +267,8 @@ export default function Layout() {
   );
 
   return (
-    <div className="flex min-h-screen bg-[var(--canvas)] text-[var(--text-primary)]">
-      <div className="hidden md:block">{sidebar}</div>
+    <div className="flex h-dvh min-h-0 overflow-hidden bg-[var(--canvas)] text-[var(--text-primary)]">
+      <div className="hidden h-dvh shrink-0 md:block">{sidebar}</div>
 
       {sidebarOpen && (
         <div className="fixed inset-0 z-40 md:hidden">
@@ -282,7 +282,7 @@ export default function Layout() {
         </div>
       )}
 
-      <main className="min-w-0 flex-1 overflow-hidden bg-[var(--canvas)]">
+      <main className="min-h-0 min-w-0 flex-1 overflow-hidden bg-[var(--canvas)]">
         <div className="flex h-14 items-center justify-between border-b border-[var(--border)] bg-[var(--surface)] px-4 md:hidden">
           <button
             type="button"
@@ -302,7 +302,7 @@ export default function Layout() {
             <Plus size={18} />
           </button>
         </div>
-        <div className="h-[calc(100vh-3.5rem)] overflow-hidden md:h-screen">
+        <div className="h-[calc(100dvh-3.5rem)] overflow-hidden md:h-dvh">
           <Outlet />
         </div>
       </main>

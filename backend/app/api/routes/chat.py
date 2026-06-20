@@ -4,7 +4,6 @@ from sqlalchemy.orm import Session
 from datetime import datetime
 
 from backend.app.schemas.chat import ChatRequest, ChatResponse
-from backend.app.services.ollama_service import get_ollama_service
 from backend.app.services.chat_orchestrator import get_chat_orchestrator
 from backend.app.core.database import get_db
 from database.models.ChatMessage import ChatMessage
@@ -117,16 +116,8 @@ async def send_message_stream(session_id: int, msg: ChatRequest, request: Reques
 
 @router.post("/chat", response_model=ChatResponse)
 async def chat(msg: ChatRequest):
-    """Keep the old endpoint for backward compatibility / fallback"""
-    service = get_ollama_service()
-    try:
-        # Simply run the generate method inside a threadpool since requests is synchronous
-        from fastapi.concurrency import run_in_threadpool
-        answer = await run_in_threadpool(service.generate, msg.message)
-    except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=str(exc),
-        ) from exc
-
-    return ChatResponse(modelResponse=answer)
+    """Legacy raw chat is disabled so it cannot bypass RAG scope enforcement."""
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail="Legacy /chat is disabled. Use /chat/sessions/{session_id}/message.",
+    )

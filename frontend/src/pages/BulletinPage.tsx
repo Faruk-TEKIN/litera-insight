@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Newspaper, Clock, ChevronDown, ChevronUp, ExternalLink, Sparkles, Search, X } from 'lucide-react';
+import { Newspaper, Clock, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ExternalLink, Sparkles, Search, X } from 'lucide-react';
 import { ensureOk, getBackendBaseUrl, normalizeUnknownError } from '../api/client';
 import { clearStoredUser, getAuthHeaders } from '../lib/auth';
 import { categoryLabel } from '../lib/categoryLabels';
@@ -49,6 +49,9 @@ interface UserBulletinResponse {
 type SelectionType = 'clusters' | 'categories';
 type WeeksBestSelectionType = 'cluster' | 'category';
 
+const MIN_CATEGORY_PAPER_COUNT = 500;
+const PAPERS_PER_PAGE = 10;
+
 interface WeeksBestSource {
   source_id: string;
   article_id: number;
@@ -75,6 +78,10 @@ interface WeeksBestBulletin {
     candidate_count?: number;
     selected_count?: number;
     source_count?: number;
+    model_name?: string | null;
+    use_llm?: boolean;
+    generation_source?: string | null;
+    llm_error?: string | null;
     generated_at?: string;
     limited_activity?: boolean;
   };
@@ -210,7 +217,6 @@ export default function BulletinPage() {
   const [weeksBestWeekStart, setWeeksBestWeekStart] = useState(() => previousWeekRange().start);
   const [weeksBestWeekEnd, setWeeksBestWeekEnd] = useState(() => previousWeekRange().end);
 
-  const PAPERS_PER_PAGE = 10;
   const backendBaseUrl = getBackendBaseUrl();
 
   useEffect(() => {
@@ -244,26 +250,31 @@ export default function BulletinPage() {
             metadata: asRecord(cluster.metadata),
           };
         }));
-        setCategoryOptions(asArray(options.categories).map((rawCategory) => {
+        const categories = asArray(options.categories).map((rawCategory) => {
           const category = asRecord(rawCategory);
           return {
             category: asString(category.category),
             paper_count: asNumber(category.paper_count),
           };
-        }));
+        }).filter((category) => category.paper_count >= MIN_CATEGORY_PAPER_COUNT);
+        setCategoryOptions(categories);
         setConfigured(userBulletin.configured);
         setPreference(userBulletin.preference);
         setGroups(normalizeBulletinGroups(userBulletin.bulletin || []));
+        setCurrentPageByCluster({});
         if (userBulletin.preference) {
           setSelectionType(userBulletin.preference.selection_type);
           setSelectedClusterIds(new Set((userBulletin.preference.cluster_ids || []).map(String)));
-          setSelectedCategories(new Set(userBulletin.preference.categories || []));
+          const availableCategories = new Set(categories.map((item) => item.category));
+          const selectedAvailableCategories = (userBulletin.preference.categories || [])
+            .filter((category) => availableCategories.has(category));
+          setSelectedCategories(new Set(selectedAvailableCategories));
           if (userBulletin.preference.selection_type === 'clusters' && userBulletin.preference.cluster_ids.length) {
             setWeeksBestType('cluster');
             setWeeksBestSelectionId(String(userBulletin.preference.cluster_ids[0]));
-          } else if (userBulletin.preference.categories.length) {
+          } else if (selectedAvailableCategories.length) {
             setWeeksBestType('category');
-            setWeeksBestSelectionId(userBulletin.preference.categories[0]);
+            setWeeksBestSelectionId(selectedAvailableCategories[0]);
           }
         }
         setError(null);
@@ -357,7 +368,6 @@ export default function BulletinPage() {
           selection_type: selectionType,
           cluster_ids: selectionType === 'clusters' ? Array.from(selectedClusterIds).map(Number) : [],
           categories: selectionType === 'categories' ? Array.from(selectedCategories) : [],
-          limit: 10,
           include_digests: true,
           notifications_enabled: true,
         }),
@@ -374,6 +384,7 @@ export default function BulletinPage() {
       setConfigured(data.configured);
       setPreference(data.preference);
       setGroups(normalizeBulletinGroups(data.bulletin || []));
+      setCurrentPageByCluster({});
       setTopicsOpen(false);
     } catch (error) {
       console.error("Failed to save bulletin preference", error);
@@ -404,7 +415,7 @@ export default function BulletinPage() {
           week_start: weeksBestWeekStart,
           week_end: weeksBestWeekEnd,
           force_refresh: forceRefresh,
-          use_llm: false,
+          use_llm: true,
         }),
       });
       await ensureOk(response);
@@ -634,10 +645,10 @@ export default function BulletinPage() {
         <div className="space-y-3">
           {visibleGroups.length ? visibleGroups.map(({ cluster, papers, digest }) => {
             const isExpanded = expandedClusters.has(cluster.id);
-            const currentPage = currentPageByCluster[cluster.id] || 1;
-            const totalPages = Math.ceil(papers.length / PAPERS_PER_PAGE);
+            const totalPages = Math.max(1, Math.ceil(papers.length / PAPERS_PER_PAGE));
+            const requestedPage = currentPageByCluster[cluster.id] || 1;
+            const currentPage = Math.min(Math.max(requestedPage, 1), totalPages);
             
-            // Slice papers for pagination
             const startIndex = (currentPage - 1) * PAPERS_PER_PAGE;
             const visiblePapers = isExpanded 
               ? papers.slice(startIndex, startIndex + PAPERS_PER_PAGE) 
@@ -660,7 +671,7 @@ export default function BulletinPage() {
                     />
                     <h3 className="text-sm font-semibold text-[var(--text-primary)] text-left">{cluster.name}</h3>
                     <span className="text-xs text-[var(--text-muted)] font-medium">
-                      ({papers.length} representative papers)
+                      ({papers.length} of {cluster.paper_count} papers loaded)
                     </span>
                   </div>
                   <div className="flex items-center gap-3">
@@ -712,33 +723,16 @@ export default function BulletinPage() {
                     )}
                   </div>
 
-                  {/* Pagination Controls inside accordion */}
                   {isExpanded && totalPages > 1 && (
-                    <div className="flex justify-between items-center mt-4 pt-3 border-t border-[var(--border)] max-w-xl mx-auto">
-                      <button
-                        disabled={currentPage === 1}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setCurrentPageByCluster(prev => ({ ...prev, [cluster.id]: currentPage - 1 }));
-                        }}
-                        className="px-3 py-1 text-xs font-medium text-[var(--text-secondary)] bg-[var(--surface)] border border-[var(--border)] rounded hover:bg-[var(--surface-elevated)] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors shadow-sm"
-                      >
-                        Previous
-                      </button>
-                      <span className="text-xs text-[var(--text-secondary)] font-semibold">
-                        Page {currentPage} of {totalPages}
-                      </span>
-                      <button
-                        disabled={currentPage === totalPages}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setCurrentPageByCluster(prev => ({ ...prev, [cluster.id]: currentPage + 1 }));
-                        }}
-                        className="px-3 py-1 text-xs font-medium text-[var(--text-secondary)] bg-[var(--surface)] border border-[var(--border)] rounded hover:bg-[var(--surface-elevated)] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors shadow-sm"
-                      >
-                        Next
-                      </button>
-                    </div>
+                    <PaginationControls
+                      currentPage={currentPage}
+                      pageSize={PAPERS_PER_PAGE}
+                      totalItems={papers.length}
+                      totalPages={totalPages}
+                      onPageChange={(page) => {
+                        setCurrentPageByCluster((prev) => ({ ...prev, [cluster.id]: page }));
+                      }}
+                    />
                   )}
                 </div>
               </div>
@@ -750,6 +744,75 @@ export default function BulletinPage() {
       </div>
     </div>
   );
+}
+
+function PaginationControls({
+  currentPage,
+  onPageChange,
+  pageSize,
+  totalItems,
+  totalPages,
+}: {
+  currentPage: number;
+  onPageChange: (page: number) => void;
+  pageSize: number;
+  totalItems: number;
+  totalPages: number;
+}) {
+  const startItem = totalItems ? (currentPage - 1) * pageSize + 1 : 0;
+  const endItem = Math.min(currentPage * pageSize, totalItems);
+  const pages = getVisiblePageNumbers(currentPage, totalPages);
+
+  return (
+    <div className="mt-4 flex flex-col gap-3 border-t border-[var(--border)] pt-3 lg:flex-row lg:items-center lg:justify-between">
+      <p className="text-xs font-medium text-[var(--text-secondary)]">
+        Showing {startItem}-{endItem} of {totalItems} papers
+      </p>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <button
+          type="button"
+          disabled={currentPage === 1}
+          onClick={() => onPageChange(currentPage - 1)}
+          className="inline-flex h-8 items-center gap-1 rounded-md border border-[var(--border)] bg-[var(--surface)] px-2.5 text-xs font-semibold text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-elevated)] disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          <ChevronLeft size={14} />
+          Previous
+        </button>
+        {pages.map((page) => (
+          <button
+            key={page}
+            type="button"
+            onClick={() => onPageChange(page)}
+            className={`h-8 min-w-8 rounded-md border px-2 text-xs font-semibold transition-colors ${
+              page === currentPage
+                ? 'border-emerald-400 bg-[var(--accent-soft)] text-emerald-600'
+                : 'border-[var(--border)] bg-[var(--surface)] text-[var(--text-secondary)] hover:bg-[var(--surface-elevated)]'
+            }`}
+            aria-current={page === currentPage ? 'page' : undefined}
+          >
+            {page}
+          </button>
+        ))}
+        <button
+          type="button"
+          disabled={currentPage === totalPages}
+          onClick={() => onPageChange(currentPage + 1)}
+          className="inline-flex h-8 items-center gap-1 rounded-md border border-[var(--border)] bg-[var(--surface)] px-2.5 text-xs font-semibold text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-elevated)] disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Next
+          <ChevronRight size={14} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function getVisiblePageNumbers(currentPage: number, totalPages: number) {
+  if (totalPages <= 5) {
+    return Array.from({ length: totalPages }, (_, index) => index + 1);
+  }
+  const start = Math.max(1, Math.min(currentPage - 2, totalPages - 4));
+  return Array.from({ length: 5 }, (_, index) => start + index);
 }
 
 function BulletinPreferencePanel({
@@ -1014,7 +1077,7 @@ function WeeksBestPanel({
             ) : null}
           </div>
           <p className="mt-1 text-xs text-[var(--text-secondary)]">
-            {weekStart} - {weekEnd} · cached editorial summary from selected weekly papers
+            {weekStart} - {weekEnd} · Ollama editorial generation from selected weekly papers
           </p>
         </div>
         <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
@@ -1120,7 +1183,24 @@ function WeeksBestPanel({
                 <span>{bulletin.metadata?.selected_count || 0} selected papers</span>
                 <span>·</span>
                 <span>{bulletin.metadata?.candidate_count || 0} candidates reviewed</span>
+                {bulletin.metadata?.model_name ? (
+                  <>
+                    <span>·</span>
+                    <span>{bulletin.metadata.model_name}</span>
+                  </>
+                ) : null}
+                {bulletin.metadata?.generation_source ? (
+                  <>
+                    <span>·</span>
+                    <span>{bulletin.metadata.generation_source}</span>
+                  </>
+                ) : null}
               </div>
+              {bulletin.metadata?.llm_error ? (
+                <div className="mb-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  {bulletin.metadata.llm_error}
+                </div>
+              ) : null}
               <MarkdownContent content={bulletin.full_markdown || ''} />
             </article>
             <aside className="rounded-md border border-[var(--border)] bg-[var(--surface)] p-4">

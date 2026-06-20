@@ -4,6 +4,7 @@
 !.env.example
 *.env
 PLAN.md
+!docs/analytics_dashboard/plan.md
 
 # Python
 __pycache__/

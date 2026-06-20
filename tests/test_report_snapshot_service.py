@@ -1,9 +1,13 @@
 from datetime import datetime
+from types import SimpleNamespace
 
 from backend.app.services.bulletin_snapshot_service import (
+    BulletinSnapshotService,
     default_previous_week,
     weeks_best_snapshot_key,
 )
+from backend.app.schemas.bulletin import WeeksBestBulletinRequest
+from backend.app.services.bulletin_generation_service import BulletinGenerationService
 from backend.app.services.bulletin_validation_service import BulletinValidationService
 from backend.app.services.bulletin_candidate_service import BulletinSelection
 from backend.app.services.report_snapshot_service import (
@@ -11,11 +15,14 @@ from backend.app.services.report_snapshot_service import (
     ANALYTICS_SCHEMA_VERSION,
     DEFAULT_BULLETIN_INCLUDE_DIGESTS,
     DEFAULT_BULLETIN_LIMIT,
+    LEGACY_ANALYTICS_SNAPSHOT_KEY,
+    ReportSnapshotService,
     acceleration,
     analytics_snapshot_key,
     bulletin_snapshot_key,
     default_bulletin_snapshot_key,
     empty_cluster_quality,
+    _clusters_from_counts,
 )
 from database.db import Base
 from database.models.ReportSnapshot import ReportSnapshot
@@ -38,6 +45,29 @@ def test_analytics_snapshot_key_changes_with_filters():
     assert base_key != filtered_key
 
 
+def test_default_analytics_does_not_fall_back_to_legacy_snapshot():
+    class FakeAnalyticsService(ReportSnapshotService):
+        def __init__(self):
+            super().__init__(db=object())
+            self.refreshed = False
+
+        def _get_snapshot(self, snapshot_key):
+            if snapshot_key == LEGACY_ANALYTICS_SNAPSHOT_KEY:
+                return SimpleNamespace(payload_json={"filters": {"period": "all"}, "metrics": {"totalPapers": 999}})
+            return None
+
+        def refresh_analytics_snapshot(self, source=None, category=None, period="12m"):
+            self.refreshed = True
+            return {"filters": {"period": period}, "metrics": {"totalPapers": 12}}
+
+    service = FakeAnalyticsService()
+    payload = service.get_analytics(period="12m")
+
+    assert service.refreshed is True
+    assert payload["filters"]["period"] == "12m"
+    assert payload["metrics"]["totalPapers"] == 12
+
+
 def test_acceleration_handles_zero_previous_window():
     assert acceleration(5, 0) == 5
     assert acceleration(0, 0) == 0
@@ -49,6 +79,30 @@ def test_empty_cluster_quality_avoids_zero_division_defaults():
     assert quality["outlierRatio"] == 0
     assert quality["largestClusterRatio"] == 0
     assert quality["avgRepresentationScore"] == 0
+
+
+def test_clusters_from_counts_falls_back_when_cluster_metadata_is_missing():
+    clusters = _clusters_from_counts({42: 15, 7: 30}, [])
+
+    assert [cluster.cluster_id for cluster in clusters] == [7, 42]
+    assert [cluster.article_count for cluster in clusters] == [30, 15]
+    assert clusters[0].cluster_description == "Cluster 7"
+
+
+def test_clusters_from_counts_keeps_existing_cluster_metadata():
+    existing = SimpleNamespace(
+        cluster_id=42,
+        cluster_description="Vision Transformers",
+        article_count=0,
+        metadata_json={},
+        created_at=None,
+    )
+
+    clusters = _clusters_from_counts({42: 15}, [existing])
+
+    assert clusters == [existing]
+    assert clusters[0].cluster_description == "Vision Transformers"
+    assert clusters[0].article_count == 15
 
 
 def test_default_bulletin_snapshot_key_matches_default_params():
@@ -95,6 +149,93 @@ def test_weeks_best_snapshot_key_is_stable_and_scoped():
         week_end=datetime(2026, 6, 14).date(),
     )
     assert base_key != category_key
+    assert base_key != weeks_best_snapshot_key(
+        selection_type="cluster",
+        selection_id="42",
+        week_start=datetime(2026, 6, 8).date(),
+        week_end=datetime(2026, 6, 14).date(),
+        use_llm=False,
+    )
+    assert base_key != weeks_best_snapshot_key(
+        selection_type="cluster",
+        selection_id="42",
+        week_start=datetime(2026, 6, 8).date(),
+        week_end=datetime(2026, 6, 14).date(),
+        model_name="another-model",
+    )
+
+
+def test_weeks_best_request_uses_ollama_by_default():
+    request = WeeksBestBulletinRequest(
+        selection_type="category",
+        selection_id="cs.AI",
+        week_start=datetime(2026, 6, 8).date(),
+        week_end=datetime(2026, 6, 14).date(),
+    )
+
+    assert request.use_llm is True
+
+
+def test_weeks_best_get_or_generate_retries_failed_snapshot(monkeypatch):
+    class FailedSnapshot:
+        payload_json = {"status": "failed"}
+
+    service = BulletinSnapshotService.__new__(BulletinSnapshotService)
+    monkeypatch.setattr(service, "_get_snapshot", lambda key: FailedSnapshot())
+
+    def fake_generate(selection_type, selection_id, week_start, week_end, use_llm=True):
+        return {"status": "validated", "selection_id": selection_id, "use_llm": use_llm}
+
+    monkeypatch.setattr(service, "generate", fake_generate)
+
+    result = service.get_or_generate(
+        selection_type="category",
+        selection_id="cs.AI",
+        week_start=datetime(2026, 6, 8).date(),
+        week_end=datetime(2026, 6, 14).date(),
+    )
+
+    assert result == {"status": "validated", "selection_id": "cs.AI", "use_llm": True}
+
+
+def test_weeks_best_generation_marks_deterministic_fallback(monkeypatch):
+    class FailingOllama:
+        model = "gemma4:e4b"
+
+        def generate(self, prompt: str) -> str:
+            raise RuntimeError("ollama is unavailable")
+
+    monkeypatch.setattr(
+        "backend.app.services.bulletin_generation_service.get_ollama_service",
+        lambda: FailingOllama(),
+    )
+    selection = BulletinSelection(
+        selection_type="category",
+        selection_id="cs.AI",
+        selection_label="cs.AI",
+        week_start=datetime(2026, 6, 8),
+        week_end=datetime(2026, 6, 14, 23, 59, 59),
+    )
+    cards = [
+        {
+            "source_id": "S1",
+            "article_id": 1,
+            "title": "A Reliable RAG Evaluation Method",
+            "authors": ["Alice"],
+            "published_date": "2026-06-10",
+            "source": "arxiv",
+            "doi": "10.1000/example",
+            "pdf_url": None,
+            "url": None,
+            "one_sentence_summary": "This paper evaluates retrieval augmented generation systems with auditable evidence.",
+        }
+    ]
+
+    bulletin = BulletinGenerationService(use_llm=True).generate(selection, cards)
+
+    assert bulletin["generation_source"] == "deterministic_fallback"
+    assert bulletin["llm_error"] == "Ollama generation failed; deterministic fallback was used."
+    assert "A Reliable RAG Evaluation Method" in bulletin["full_markdown"]
 
 
 def test_default_previous_week_uses_monday_to_sunday_window():
@@ -144,3 +285,86 @@ def test_weeks_best_validation_rejects_unknown_citations():
 
     assert result["valid"] is False
     assert any("Unknown cited source ids" in error for error in result["errors"])
+
+
+def test_weeks_best_validation_accepts_numbered_top_papers_list():
+    selection = BulletinSelection(
+        selection_type="category",
+        selection_id="cs.AI",
+        selection_label="cs.AI",
+        week_start=datetime(2026, 6, 8),
+        week_end=datetime(2026, 6, 14, 23, 59, 59),
+    )
+    cards = [
+        {
+            "source_id": "S1",
+            "article_id": 1,
+            "title": "A Reliable RAG Evaluation Method",
+            "published_date": "2026-06-10",
+        }
+    ]
+    bulletin = {
+        "full_markdown": "\n".join(
+            [
+                "# Week's Best - cs.AI",
+                "## Editorial Lead",
+                "Claim [S1]",
+                "## Top Papers",
+                "1. **A Reliable RAG Evaluation Method** - A concise source-grounded summary. [S1]",
+                "## Emerging Trend",
+                "Trend [S1]",
+                "## Why It Matters",
+                "Reason [S1]",
+                "## Papers to Watch",
+                "- None",
+                "## Sources",
+                "[S1] A Reliable RAG Evaluation Method",
+            ]
+        )
+    }
+
+    result = BulletinValidationService().validate(selection, cards, bulletin)
+
+    assert result["valid"] is True
+
+
+def test_weeks_best_validation_rejects_empty_top_papers_section():
+    selection = BulletinSelection(
+        selection_type="category",
+        selection_id="cs.AI",
+        selection_label="cs.AI",
+        week_start=datetime(2026, 6, 8),
+        week_end=datetime(2026, 6, 14, 23, 59, 59),
+    )
+    cards = [
+        {
+            "source_id": "S1",
+            "article_id": 1,
+            "title": "A Reliable RAG Evaluation Method",
+            "published_date": "2026-06-10",
+        }
+    ]
+    bulletin = {
+        "full_markdown": "\n".join(
+            [
+                "# Week's Best - cs.AI",
+                "## Editorial Lead",
+                "Claim [S1]",
+                "## Top Papers",
+                "",
+                "## Emerging Trend",
+                "Trend [S1]",
+                "## Why It Matters",
+                "Reason [S1]",
+                "## Papers to Watch",
+                "- None",
+                "## Sources",
+                "[S1] A Reliable RAG Evaluation Method",
+            ]
+        )
+    }
+
+    result = BulletinValidationService().validate(selection, cards, bulletin)
+
+    assert result["valid"] is False
+    assert "Top Papers section is empty." in result["errors"]

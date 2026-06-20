@@ -9,7 +9,7 @@ from backend.app.services.digest_service import DigestService
 from backend.app.services.bulletin_snapshot_service import BulletinSnapshotService, default_previous_week
 from backend.app.services.report_snapshot_service import DEFAULT_BULLETIN_LIMIT
 from backend.app.services.report_snapshot_service import ReportSnapshotService
-from backend.app.services.user_bulletin_service import UserBulletinService
+from backend.app.services.user_bulletin_service import USER_BULLETIN_PAPER_LIMIT, UserBulletinService
 from database.models.ArticleData import Article
 from database.models.User import User
 
@@ -41,10 +41,11 @@ def get_bulletin_options(db: Session = Depends(get_db)):
 @router.get("/bulletin/me")
 def get_my_bulletin(
     force_refresh: bool = Query(default=False, description="Kullanici bulten snapshot'ini yeniden uret"),
+    limit: int | None = Query(default=USER_BULLETIN_PAPER_LIMIT, ge=1, description="Cluster basina getirilecek makale sayisi; bos ise tumu"),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    return UserBulletinService(db).get_user_bulletin(user.id, force_refresh=force_refresh)
+    return UserBulletinService(db).get_user_bulletin(user.id, force_refresh=force_refresh, limit=limit)
 
 
 @router.post("/bulletin/me")
@@ -75,7 +76,7 @@ def get_weeks_best_bulletin(
     week_end: date | None = Query(default=None, description="Hafta bitisi, YYYY-MM-DD"),
     generate_if_missing: bool = Query(default=False, description="Snapshot yoksa senkron uret"),
     force_refresh: bool = Query(default=False, description="Snapshot'i yeniden uret"),
-    use_llm: bool = Query(default=False, description="Ollama ile editorial metin uret"),
+    use_llm: bool = Query(default=True, description="Ollama ile editorial metin uret"),
     db: Session = Depends(get_db),
 ):
     if week_start is None or week_end is None:
@@ -95,6 +96,7 @@ def get_weeks_best_bulletin(
         selection_id=selection_id,
         week_start=week_start,
         week_end=week_end,
+        use_llm=use_llm,
     )
 
 

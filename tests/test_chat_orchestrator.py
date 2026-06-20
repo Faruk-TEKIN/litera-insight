@@ -3,11 +3,12 @@ from datetime import datetime
 from backend.app.schemas.retrieval import RetrievalFilters, RouteDecision
 from backend.app.schemas.retrieval import RetrievedArticle
 from backend.app.schemas.source import SourceReference
+from backend.app.services.assistant_prompts import ACADEMIC_ASSISTANT_SYSTEM_PROMPT
 from backend.app.services.chat_orchestrator import ChatOrchestrator, _format_sources_section, _has_sources_section
 from backend.app.services.conversation_memory_service import ConversationMemory
 
 
-def test_rag_answer_prompt_requires_sources_with_publish_date():
+def test_rag_answer_prompt_body_requires_sources_with_publish_date():
     orchestrator = ChatOrchestrator.__new__(ChatOrchestrator)
     memory = ConversationMemory(summary=None, recent_messages=[], previous_sources=[])
     route_decision = RouteDecision(
@@ -32,6 +33,38 @@ def test_rag_answer_prompt_requires_sources_with_publish_date():
     assert "Yayın tarihi: YYYY-MM-DD" in prompt
     assert "Published: Unknown" in prompt
     assert "Yayın tarihi: Bilinmiyor" in prompt
+    assert ACADEMIC_ASSISTANT_SYSTEM_PROMPT in prompt
+    assert "As an AI assistant, I can help with academic research" in prompt
+    assert "As an AI assistant, I cannot help with that request." in prompt
+    assert "Evaluate the practical capability" in prompt
+    assert "Retrieved context and source integrity:" in prompt
+    assert "Do not debate the refusal" in prompt
+
+
+def test_rag_answer_messages_use_separate_system_and_user_roles():
+    orchestrator = ChatOrchestrator.__new__(ChatOrchestrator)
+    memory = ConversationMemory(summary=None, recent_messages=[], previous_sources=[])
+    route_decision = RouteDecision(
+        use_rag=False,
+        reason="test",
+        rewritten_query="retrieval question",
+        filters=RetrievalFilters(),
+        top_k=5,
+    )
+
+    messages = orchestrator._build_answer_messages(
+        message="Give me a football opinion",
+        memory=memory,
+        route_decision=route_decision,
+        rag_context="",
+        retrieved=[],
+    )
+
+    assert messages[0]["role"] == "system"
+    assert messages[0]["content"] == ACADEMIC_ASSISTANT_SYSTEM_PROMPT
+    assert messages[1]["role"] == "user"
+    assert "Conversation memory:" in messages[1]["content"]
+    assert "User message:\nGive me a football opinion" in messages[1]["content"]
 
 
 def test_source_section_helpers_support_publish_date_and_turkish_heading():

@@ -147,6 +147,8 @@ Sistem ilişkisel ve vektörel veriyi PostgreSQL üzerinde şu temel modellerle 
 
 ## 7. Geliştirici Çalıştırma Akışı (Runbook Quickstart)
 
+Temiz klon + veri dosyalarıyla otomatik başlangıç akışı için ayrıca [docs/LOCAL_BOOTSTRAP.md](/home/terminal/Documents/projects/git-repo/AcademicAI-Insight/docs/LOCAL_BOOTSTRAP.md) dosyasına bakın.
+
 Yerel geliştirme ortamında sistemi ayağa kaldırmak için genel adımlar şunlardır:
 
 1. **Docker Compose Başlatma (PostgreSQL ve Frontend/Backend):**

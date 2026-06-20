@@ -4,6 +4,7 @@ FROM python:3.11-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libpq-dev \
+    postgresql-client \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
@@ -20,6 +21,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY backend /app/backend
 COPY ai_engine /app/ai_engine
 COPY database /app/database
+COPY backend/docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh
 
 # Set Python path so backend can be imported correctly
 ENV PYTHONPATH=/app
@@ -27,5 +30,5 @@ ENV PYTHONPATH=/app
 # Expose port
 EXPOSE 8000
 
-# Command to run the application
-CMD ["uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Bootstrap database/migrations, then run the application
+ENTRYPOINT ["/app/docker-entrypoint.sh"]

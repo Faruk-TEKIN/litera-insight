@@ -27,7 +27,7 @@ services:
     environment:
       - DATABASE_URL=postgresql+psycopg2://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-academic_platform}
       - OLLAMA_BASE_URL=http://ollama:11434
-      - MODEL_NAME=${MODEL_NAME:-gemma4:e4b}
+      - MODEL_NAME=${MODEL_NAME:-qwen2.5:0.5b}
       - EMBEDDING_MODEL_NAME=${EMBEDDING_MODEL_NAME:-intfloat/multilingual-e5-base}
       - RAG_TOP_K=${RAG_TOP_K:-5}
       - RAG_CANDIDATE_K=${RAG_CANDIDATE_K:-25}
@@ -50,34 +50,42 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
-      - postgres
-      - ollama-pull
+      postgres:
+        condition: service_started
+      ollama-pull:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   ollama:
     image: ollama/ollama:latest
-    container_name: ollama
-    ports:
-      - "11434:11434"
+    env_file:
+      - path: .env
+        required: false
     volumes:
       - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
     restart: unless-stopped
 
   ollama-pull:
     image: ollama/ollama:latest
-    container_name: ollama-pull
-    depends_on:
-      - ollama
+    env_file:
+      - path: .env
+        required: false
     environment:
-      - MODEL_NAME=${MODEL_NAME:-gemma4:e4b}
-    command:
-      - sh
-      - -lc
-      - |
-        until ollama list >/dev/null 2>&1; do
-          sleep 2
-        done
-        ollama pull "${MODEL_NAME:-gemma4:e4b}"
+      - OLLAMA_HOST=http://ollama:11434
+    depends_on:
+      ollama:
+        condition: service_healthy
+    entrypoint:
+      - /bin/sh
+      - /scripts/ollama-pull.sh
+    volumes:
+      - ./docker/ollama-pull.sh:/scripts/ollama-pull.sh:ro
     restart: "no"
 
   frontend:

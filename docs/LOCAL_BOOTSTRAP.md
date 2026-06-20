@@ -15,12 +15,13 @@ Copy these files into:
 
 ```bash
 git clone <repo-url>
-cp -r /path/to/database/* <repo-root>/exports/retrieval/
 cd <repo-root>
+mkdir exports && mkdir exports/retrieval/
+cp -r /path/to/database/* exports/retrieval/
 docker compose up --build
 ```
 
-`/path/to/database`, `academic_platform.dump` ve `articles_bm25.sqlite` dosyalarının bulunduğu yerel klasördür.
+`/path/to/database` folder, contains `academic_platform.dump` and `articles_bm25.sqlite` files.
 
 ## What happens automatically
 

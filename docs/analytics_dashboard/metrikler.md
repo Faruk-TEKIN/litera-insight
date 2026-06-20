@@ -23,8 +23,8 @@ Backend akisi:
 
 1. `ReportSnapshotService.get_analytics()` period degerini normalize eder.
 2. `analytics_snapshot_key(source, category, period)` ile filtrelere ozel cache anahtari uretir.
-3. Cache'te `report_snapshots` kaydi varsa onu doner.
-4. Cache yoksa `build_analytics_payload()` ile payload hesaplanir ve `report_snapshots` tablosuna yazilir.
+3. Cache'te `report_snapshots` kaydi varsa snapshot metadata'sindaki `dataFingerprint` mevcut veri fingerprint'i ile karsilastirilir.
+4. Fingerprint eslesirse snapshot doner; eslesmezse veya cache yoksa `build_analytics_payload()` ile payload hesaplanir ve `report_snapshots` tablosuna yazilir.
 
 Snapshot anahtari su alanlarin hash'inden olusur:
 
@@ -32,7 +32,7 @@ Snapshot anahtari su alanlarin hash'inden olusur:
 - `category`
 - `period`
 
-Analytics schema version mevcut kodda `analytics:v5`.
+Analytics schema version mevcut kodda `analytics:v6`.
 
 ## Filtreleme Kurallari
 
@@ -55,10 +55,10 @@ Frontend su an source filtresi gondermiyor.
 ```text
 Article.primary_category == category
 veya
-Article.categories ILIKE "%<category>%"
+Article.categories delimiter-aware token eslesmesi
 ```
 
-Bu nedenle kategori filtresi hem birincil kategori alanina hem de metinsel kategori listesine bakar.
+Bu nedenle kategori filtresi hem birincil kategori alanina hem de metinsel kategori listesine bakar; metinsel liste eslesmesi substring yerine bosluk, virgul, noktalı virgul, pipe ve newline ayraclarini dikkate alir.
 
 ### Period filtresi
 
@@ -66,19 +66,19 @@ Gecerli period degerleri:
 
 | UI etiketi | Backend degeri | Hesaplama |
 |---|---:|---|
-| 1 month | `1m` | son 30 gun |
-| 3 months | `3m` | son 90 gun |
-| 6 months | `6m` | son 180 gun |
-| 12 months | `12m` | son 365 gun |
-| All | `all` | tarih filtresi yok |
+| 1 month | `1m` | reference ayı |
+| 3 months | `3m` | reference ayı dahil 3 calendar month |
+| 6 months | `6m` | reference ayı dahil 6 calendar month |
+| 12 months | `12m` | reference ayı dahil 12 calendar month |
+| All | `all` | tarihli veri setindeki min-max ay araligi |
 
-Period `all` degilse sorguya su kosul eklenir:
+Analytics kapsaminda `publish_date IS NOT NULL` sarti her zaman uygulanir. `reference_date`, secili `source/category` filtresindeki en buyuk `Article.publish_date` degeridir. Period filtresi su sekilde uygulanir:
 
 ```text
-Article.publish_date >= datetime.utcnow() - timedelta(days=<period_days>)
+period_start <= Article.publish_date <= reference_date
 ```
 
-Onemli davranis: Bu filtre bugunun tarihine gore calisir; veri setindeki en yeni yayin tarihine gore calismaz. `publish_date` bos olan makaleler finite period secimlerinde SQL karsilastirmasina takildigi icin disarida kalir, `all` seciminde ise dahil olabilir.
+`period=all` secilirse `period_start`, filtreli tarihli veri setindeki en eski yayin ayinin baslangicidir.
 
 ## Ust Metrik Kartlari
 
@@ -157,24 +157,10 @@ metrics.weeklyPicks
 Backend:
 
 ```text
-article_query.filter(Article.publish_date >= datetime.utcnow() - timedelta(days=7)).count()
+article_query.filter(Article.publish_date >= reference_date - timedelta(days=7)).count()
 ```
 
-Secili `source`, `category` ve `period` filtresine ek olarak son 7 gunde yayinlanmis makale sayisidir. Period `all` olsa bile son 7 gun kosulu ayrica uygulanir.
-
-### PDF Available
-
-Payload'da var, mevcut dashboard ekraninda dogrudan gosterilmiyor.
-
-Backend:
-
-```text
-Article.pdf_url IS NOT NULL
-veya
-Article.metadata_json["has_pdf"] == true
-```
-
-Secili filtrelerden gecen makaleler icinde PDF linki veya metadata PDF isareti bulunan makale sayisidir.
+Secili `source`, `category` ve `period` filtresine ek olarak reference date'e gore son 7 gunde yayinlanmis makale sayisidir. `pdfAvailable` artik analytics payload'inda donmez.
 
 ## Cluster Verisinin Hazirlanmasi
 
@@ -268,13 +254,18 @@ Gosterilen alanlar:
 | Score | `score` |
 | Total | `paper_count` |
 
-Onemli davranis: Rising Topics hesaplamasi secili `period` filtresini kullanmaz; kendi 7/30/90 gun pencerelerini `period="all"` baz sorgusu uzerinden hesaplar. `source` ve `category` filtrelerini ise kullanir.
+Onemli davranis: Rising Topics hesaplamasi secili `period` filtresini kullanmaz; kendi 7/30/90 gun pencerelerini filtreli veri setinin `reference_date` degerine gore hesaplar. `source` ve `category` filtrelerini kullanir.
 
 ## Cluster Quality
 
 Frontend bolumu: `Cluster Quality`
 
 Backend fonksiyonu: `_cluster_quality()`
+
+Payload iki ayri kalite alani doner:
+
+- `filteredClusterQuality`: secili `source/category/period` kapsamindaki tarihli makaleler.
+- `globalClusterQuality`: tum tarihli makaleler.
 
 ### Outlier Ratio
 
@@ -293,9 +284,9 @@ Frontend bunu yuzde olarak gosterir. Deger `0.35` ustundeyse uyarili stil kullan
 Backend:
 
 ```text
-largestCluster = verilen clusters listesinde article_count degeri en buyuk cluster
-clusteredPapers = tum veritabaninda cluster_id IS NOT NULL olan makale sayisi
-largestClusterRatio = largestCluster.article_count / clusteredPapers
+largestCluster = filtrelenmis cluster count degeri en buyuk cluster
+clusteredPapers = ilgili kalite kapsaminda cluster_id IS NOT NULL olan makale sayisi
+largestClusterRatio = largestClusterFilteredCount / clusteredPapers
 ```
 
 Frontend yuzde olarak gosterir. Deger `0.45` ustundeyse uyarili stil kullanir.
@@ -315,21 +306,21 @@ Frontend yuzde olarak gosterir. Deger `0.4` altindaysa uyarili stil kullanir.
 Backend:
 
 ```text
-embedding IS NOT NULL olan tum makale sayisi
+ilgili kalite kapsaminda embedding IS NOT NULL olan makale sayisi
 ```
 
-Onemli davranis: Cluster Quality icindeki outlier, embedded ve clustered sayilari `source`, `category` ve `period` filtrelerinden bagimsiz olarak global veritabanindan hesaplanir. Sadece `largestCluster` ve `avgRepresentationScore` icin fonksiyona verilen cluster listesi etkili olur.
+Frontend filtered ve global kalite degerlerini ayri bolumlerde gosterir.
 
 ## Cluster Trend
 
 Frontend bolumu: `Cluster Trend`
 
-Backend fonksiyonu: `_cluster_trend_data()`
+Backend fonksiyonu: `_cluster_trend_series()`
 
 Backend once en buyuk 8 cluster'i secer:
 
 ```text
-sorted(clusters, key=cluster.article_count, reverse=True)[:8]
+sorted(clusters, key=filtered_cluster_count, reverse=True)[:8]
 ```
 
 Sonra secili filtrelerle makaleleri ay bazinda gruplar:
@@ -339,10 +330,7 @@ GROUP BY Article.cluster_id, date_trunc("month", Article.publish_date)
 COUNT(Article.id)
 ```
 
-Payload iki formatta doner:
-
-- `clusterTrendData`: Ay bazli genis format; mevcut frontend bunu kullanmiyor.
-- `clusterTrendSeries`: Her satir bir `cluster_id + month` kombinasyonu; frontend bunu cizgi grafigine ceviriyor.
+Payload `clusterTrendSeries` formatinda doner. Her satir bir `cluster_id + month` kombinasyonudur; frontend bunu cizgi grafigine cevirir.
 
 Frontend `clusterTrendSeries` listesini `buildTrendChartRows()` ile su formata donusturur:
 
@@ -354,7 +342,7 @@ Frontend `clusterTrendSeries` listesini `buildTrendChartRows()` ile su formata d
 }
 ```
 
-Eksik aylar veya bir cluster'in sayisi olmayan aylar sifirla doldurulmaz.
+Eksik aylar ve bir cluster'in sayisi olmayan aylar `0` ile doldurulur.
 
 ## Cluster Proportions
 
@@ -465,9 +453,9 @@ Analyze the "<cluster name>" research cluster and suggest representative papers,
 
 ## Category Filter Secenekleri
 
-Frontend category dropdown secenekleri `categoryDistribution` payload'indan gelir.
+Frontend category dropdown secenekleri `categoryOptions` payload'indan gelir.
 
-Backend fonksiyonu: `_category_distribution()`
+Backend fonksiyonu: `_category_options()`
 
 Hesaplama iki asamalidir:
 
@@ -477,32 +465,20 @@ Hesaplama iki asamalidir:
 ```text
 Article.primary_category == category
 veya
-Article.categories ILIKE "%<category>%"
+Article.categories delimiter-aware token eslesmesi
 ```
 
 Frontend label icin `categoryLabel()` kullanir. Bilinen arXiv kategorileri okunabilir ada cevrilir; bilinmeyenler humanize edilir.
 
-Onemli davranis: `categoryDistribution`, secili category filtresini kullanmaz. Bu, dropdown'in tum kategori seceneklerini gostermesi icin faydali olabilir.
+Onemli davranis: `categoryOptions`, secili category filtresini kullanmaz. Bu, dropdown'in tum kategori seceneklerini gostermesi icin faydalidir.
 
-## Source Distribution
+## Kaldirilan Legacy Payload Alanlari
 
-Payload'da var, mevcut dashboard ekraninda gosterilmiyor.
+`analytics:v6` payload'inda su eski alanlar artik donmez:
 
-Backend:
-
-```text
-GROUP BY Article.source
-COUNT(Article.id)
-```
-
-Bu hesaplama `category` ve `period` filtrelerini kullanir. `source` parametresi hesaba katilmaz; boylece kaynaklar arasi dagilim gorulebilir. Ancak frontend su an source filtresi de source dagilim grafigi de sunmuyor.
-
-## Kullanilmayan veya Bos Payload Alanlari
-
-Mevcut dashboard icin dikkat ceken alanlar:
-
-- `sourceDistribution`: Backend donuyor, frontend gorsellestirmiyor.
-- `clusterTrendData`: Backend donuyor, frontend `clusterTrendSeries` kullaniyor.
-- `papers`: Analytics payload'inda her zaman bos liste olarak donuyor.
-- `pdfAvailable`: Metrics icinde var, frontend kart veya tablo olarak gostermiyor.
-
+- `sourceDistribution`
+- `categoryDistribution`
+- `clusterTrendData`
+- `papers`
+- `clusterQuality`
+- `metrics.pdfAvailable`

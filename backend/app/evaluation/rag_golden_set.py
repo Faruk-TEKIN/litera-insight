@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.config import settings
 from backend.app.evaluation.retrieval_metrics import load_golden_questions, score_retrieval
 from backend.app.evaluation.schemas import GoldenQuestion
+from backend.app.services.assistant_prompts import ACADEMIC_ASSISTANT_SYSTEM_PROMPT
 from backend.app.schemas.retrieval import RetrievedArticle, RetrievalFilters, RouteDecision
 from backend.app.services.chat_orchestrator import ChatOrchestrator
 from backend.app.services.conversation_memory_service import ConversationMemory
@@ -170,7 +171,7 @@ class RagGoldenSetEvaluator:
         start = time.perf_counter()
         try:
             if self.config.mode == "direct_llm_baseline":
-                answer = self.ollama_service.generate(_direct_llm_prompt(question.question, memory))
+                answer = self.ollama_service.chat_generate(_direct_llm_messages(question.question, memory))
                 latency_ms = (time.perf_counter() - start) * 1000
                 return self._record(
                     question=question,
@@ -191,14 +192,14 @@ class RagGoldenSetEvaluator:
             final_answer = ""
             if self.config.mode in {"rag_end_to_end", "multi_turn_memory"}:
                 rag_context = build_rag_context(retrieved) if route_decision.use_rag else ""
-                prompt = self.orchestrator._build_answer_prompt(
+                messages = self.orchestrator._build_answer_messages(
                     question.question,
                     memory,
                     route_decision,
                     rag_context,
                     retrieved,
                 )
-                final_answer = self.ollama_service.generate(prompt)
+                final_answer = self.ollama_service.chat_generate(messages)
 
             latency_ms = (time.perf_counter() - start) * 1000
             return self._record(
@@ -672,11 +673,12 @@ def new_run_id(mode: str) -> str:
     return f"{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}-{mode}"
 
 
-def _direct_llm_prompt(question: str, memory: ConversationMemory) -> str:
-    return f"""
-You are a helpful, professional Academic Research Assistant.
-Answer in the user's language.
-
+def _direct_llm_messages(question: str, memory: ConversationMemory) -> list[dict[str, str]]:
+    return [
+        {"role": "system", "content": ACADEMIC_ASSISTANT_SYSTEM_PROMPT},
+        {
+            "role": "user",
+            "content": f"""
 Conversation memory:
 {memory.as_prompt_block() or "No prior context."}
 
@@ -687,7 +689,9 @@ User message:
 {question}
 
 Assistant:
-""".strip()
+""".strip(),
+        },
+    ]
 
 
 def _applied_filters(

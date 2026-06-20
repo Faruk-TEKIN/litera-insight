@@ -99,9 +99,9 @@ def main(argv: list[str] | None = None) -> int:
                 )
 
             rag_context = build_rag_context(retrieved) if route_decision.use_rag else ""
-            prompt = orchestrator._build_answer_prompt(item.question, memory, route_decision, rag_context, retrieved)
+            messages = orchestrator._build_answer_messages(item.question, memory, route_decision, rag_context, retrieved)
             try:
-                answer = ollama.generate(prompt)
+                answer = ollama.chat_generate(messages)
             except OllamaServiceError as exc:
                 error = str(exc)
 

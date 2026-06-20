@@ -46,8 +46,7 @@ interface ClusterPayload extends ClusterRow {
   representation_score?: number;
 }
 
-interface DistributionItem {
-  source?: string;
+interface CategoryOption {
   category?: string;
   count: number;
 }
@@ -76,7 +75,6 @@ interface AnalyticsMetrics {
   avgPapersPerCluster?: number;
   weeklyPicks?: number;
   clusteredPapers?: number;
-  pdfAvailable?: number;
 }
 
 interface ClusterQuality {
@@ -93,17 +91,23 @@ interface ClusterQuality {
 
 interface AnalyticsPayload {
   schemaVersion?: string;
+  timeRange?: {
+    referenceDate?: string | null;
+    periodStart?: string | null;
+    periodEnd?: string | null;
+    minPublishDate?: string | null;
+  };
   metrics?: AnalyticsMetrics;
   barData?: Array<Partial<BarDatum> & { name: string }>;
   pieData?: PieDatum[];
   scatterData?: ScatterDatum[];
-  monthlyData?: Array<{ month: string; publications?: number; count?: number }>;
+  monthlyData?: Array<{ month: string; monthKey?: string; publications?: number; count?: number }>;
   clusters?: ClusterPayload[];
-  sourceDistribution?: DistributionItem[];
-  categoryDistribution?: DistributionItem[];
+  categoryOptions?: CategoryOption[];
   clusterTrendSeries?: TrendSeriesItem[];
   risingTopics?: RisingTopic[];
-  clusterQuality?: ClusterQuality;
+  filteredClusterQuality?: ClusterQuality;
+  globalClusterQuality?: ClusterQuality;
 }
 
 type PeriodValue = '1m' | '3m' | '6m' | '12m' | 'all';
@@ -180,11 +184,12 @@ export default function DashboardPage() {
   const avgPerCluster = Math.round(metrics.avgPapersPerCluster || 0);
   const activeClustersCount = metrics.activeClusters || 0;
   const weeklyPicks = metrics.weeklyPicks || 0;
-  const clusterQuality = data.clusterQuality || {};
+  const filteredClusterQuality = data.filteredClusterQuality || {};
+  const globalClusterQuality = data.globalClusterQuality || {};
   const risingTopics: RisingTopic[] = data.risingTopics || [];
-  const categoryOptions = (data.categoryDistribution || []) as DistributionItem[];
+  const categoryOptions = (data.categoryOptions || []) as CategoryOption[];
   const trendSeries = (data.clusterTrendSeries || []) as TrendSeriesItem[];
-  const topClusterPaperCount = barData[0]?.papers || 0;
+  const referenceDateLabel = formatDate(data.timeRange?.referenceDate);
   const clusters: ClusterRow[] = data.clusters?.length
     ? data.clusters.map((c) => ({
       id: c.id,
@@ -202,6 +207,7 @@ export default function DashboardPage() {
       color: c.color,
       metadata: {},
     }));
+  const topClusterPaperCount = Math.max(0, ...clusters.map((cluster) => cluster.paper_count));
   const clusterQuery = clusterSearch.trim().toLowerCase();
   const filteredClusters = [...clusters]
     .filter((cluster) => {
@@ -224,7 +230,10 @@ export default function DashboardPage() {
           <div>
             <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">Observe / diagnose / explore</p>
             <h1 className="text-lg font-semibold text-[var(--text-primary)]">Analytics Dashboard</h1>
-            <p className="text-xs text-[var(--text-secondary)] mt-0.5">Academic paper cluster trends, quality, and distribution</p>
+            <p className="text-xs text-[var(--text-secondary)] mt-0.5">
+              Academic paper cluster trends, quality, and distribution
+              {referenceDateLabel ? ` · Reference date ${referenceDateLabel}` : ''}
+            </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <FilterSelect
@@ -269,7 +278,9 @@ export default function DashboardPage() {
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h3 className="text-sm font-semibold text-[var(--text-primary)]">Rising Topics</h3>
-                <p className="text-xs text-[var(--text-secondary)] mt-0.5">Clusters ranked by 7/30/90 day acceleration</p>
+                <p className="text-xs text-[var(--text-secondary)] mt-0.5">
+                  Clusters ranked by 7/30/90 day acceleration from the reference date
+                </p>
               </div>
             </div>
             {risingTopics.length ? (
@@ -301,16 +312,30 @@ export default function DashboardPage() {
 
           <div className="bg-[var(--surface)] rounded-lg border border-[var(--border)] p-5">
             <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-1">Cluster Quality</h3>
-            <p className="text-xs text-[var(--text-secondary)] mb-4">Signals from the latest clustering run</p>
-            <div className="grid grid-cols-2 gap-3">
-              <QualityStat label="Outlier Ratio" value={formatPercent(clusterQuality.outlierRatio)} warn={(clusterQuality.outlierRatio || 0) > 0.35} />
-              <QualityStat label="Largest Ratio" value={formatPercent(clusterQuality.largestClusterRatio)} warn={(clusterQuality.largestClusterRatio || 0) > 0.45} />
-              <QualityStat label="Avg Rep Score" value={formatPercent(clusterQuality.avgRepresentationScore)} warn={(clusterQuality.avgRepresentationScore || 0) < 0.4} />
-              <QualityStat label="Embedded Papers" value={String(clusterQuality.totalPapersWithEmbedding || 0)} />
+            <p className="text-xs text-[var(--text-secondary)] mb-4">Filtered signals with global baseline</p>
+            <div className="space-y-4">
+              <div>
+                <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">Filtered</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <QualityStat label="Outlier Ratio" value={formatPercent(filteredClusterQuality.outlierRatio)} warn={(filteredClusterQuality.outlierRatio || 0) > 0.35} />
+                  <QualityStat label="Largest Ratio" value={formatPercent(filteredClusterQuality.largestClusterRatio)} warn={(filteredClusterQuality.largestClusterRatio || 0) > 0.45} />
+                  <QualityStat label="Avg Rep Score" value={formatPercent(filteredClusterQuality.avgRepresentationScore)} warn={(filteredClusterQuality.avgRepresentationScore || 0) < 0.4} />
+                  <QualityStat label="Embedded Papers" value={String(filteredClusterQuality.totalPapersWithEmbedding || 0)} />
+                </div>
+              </div>
+              <div>
+                <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">Global</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <QualityStat label="Outlier Ratio" value={formatPercent(globalClusterQuality.outlierRatio)} warn={(globalClusterQuality.outlierRatio || 0) > 0.35} />
+                  <QualityStat label="Largest Ratio" value={formatPercent(globalClusterQuality.largestClusterRatio)} warn={(globalClusterQuality.largestClusterRatio || 0) > 0.45} />
+                  <QualityStat label="Avg Rep Score" value={formatPercent(globalClusterQuality.avgRepresentationScore)} warn={(globalClusterQuality.avgRepresentationScore || 0) < 0.4} />
+                  <QualityStat label="Embedded Papers" value={String(globalClusterQuality.totalPapersWithEmbedding || 0)} />
+                </div>
+              </div>
             </div>
-            {clusterQuality.largestClusterName && (
+            {filteredClusterQuality.largestClusterName && (
               <p className="mt-4 rounded-md bg-[var(--surface-elevated)] px-3 py-2 text-xs text-[var(--text-secondary)]">
-                Largest cluster: <span className="font-semibold text-[var(--text-primary)]">{clusterQuality.largestClusterName}</span>
+                Filtered largest cluster: <span className="font-semibold text-[var(--text-primary)]">{filteredClusterQuality.largestClusterName}</span>
               </p>
             )}
           </div>
@@ -385,8 +410,8 @@ export default function DashboardPage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div className="bg-[var(--surface)] rounded-lg border border-[var(--border)] p-5">
-            <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-1">Cluster Size vs. Representation Quality</h3>
-            <p className="text-xs text-[var(--text-secondary)] mb-4">Papers count vs average representation score</p>
+            <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-1">Cluster Size vs. Representative Score</h3>
+            <p className="text-xs text-[var(--text-secondary)] mb-4">Papers count vs representative article score</p>
             <div className="w-full h-[280px]">
               <ResponsiveContainer width="100%" height="100%">
                 <ScatterChart margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
@@ -486,7 +511,7 @@ export default function DashboardPage() {
                         <div
                           className="h-1.5 rounded-full transition-all duration-500"
                           style={{
-                            width: `${topClusterPaperCount ? (c.paper_count / topClusterPaperCount) * 100 : 0}%`,
+                            width: `${topClusterPaperCount ? Math.min(100, (c.paper_count / topClusterPaperCount) * 100) : 0}%`,
                             background: c.color,
                             opacity: 0.8,
                           }}
@@ -557,6 +582,17 @@ function formatPercent(value: number | undefined) {
 
 function formatSigned(value: number) {
   return value > 0 ? `+${value.toFixed(2)}` : value.toFixed(2);
+}
+
+function formatDate(value?: string | null) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
 }
 
 function FilterSelect({

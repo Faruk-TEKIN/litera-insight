@@ -612,24 +612,26 @@ Analytics is generated from `articles` and `clusters`, then cached in `report_sn
 
 Analytics payload includes:
 
+- `timeRange`
+  - reference date
+  - period start/end
+  - minimum publish date
 - `metrics`
   - total papers
   - active clusters
   - average papers per cluster
   - weekly picks
   - clustered papers
-  - PDF availability
 - `barData`, `pieData`, `scatterData`
 - `monthlyData`
 - `clusters`
-- `sourceDistribution`
-- `categoryDistribution`
-- `clusterTrendData`
+- `categoryOptions`
 - `clusterTrendSeries`
 - `risingTopics`
-- `clusterQuality`
+- `filteredClusterQuality`
+- `globalClusterQuality`
 
-Snapshot keys are deterministic hashes of filters such as source, category, and period.
+Snapshot keys are deterministic hashes of filters such as source, category, and period. Analytics snapshots also store a `dataFingerprint`; stale fingerprints force refresh.
 
 Default snapshots are refreshed after clustering through `Cluster._refresh_report_snapshots()`.
 

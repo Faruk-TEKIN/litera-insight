@@ -56,6 +56,9 @@ def test_default_analytics_does_not_fall_back_to_legacy_snapshot():
                 return SimpleNamespace(payload_json={"filters": {"period": "all"}, "metrics": {"totalPapers": 999}})
             return None
 
+        def _analytics_data_fingerprint(self):
+            return "fingerprint"
+
         def refresh_analytics_snapshot(self, source=None, category=None, period="12m"):
             self.refreshed = True
             return {"filters": {"period": period}, "metrics": {"totalPapers": 12}}
@@ -66,6 +69,58 @@ def test_default_analytics_does_not_fall_back_to_legacy_snapshot():
     assert service.refreshed is True
     assert payload["filters"]["period"] == "12m"
     assert payload["metrics"]["totalPapers"] == 12
+
+
+def test_analytics_snapshot_refreshes_when_data_fingerprint_changes():
+    class FakeAnalyticsService(ReportSnapshotService):
+        def __init__(self):
+            super().__init__(db=object())
+            self.refreshed = False
+
+        def _analytics_data_fingerprint(self):
+            return "new"
+
+        def _get_snapshot(self, snapshot_key):
+            return SimpleNamespace(
+                payload_json={"filters": {"period": "12m"}, "metrics": {"totalPapers": 999}},
+                metadata_json={"dataFingerprint": "old"},
+            )
+
+        def refresh_analytics_snapshot(self, source=None, category=None, period="12m"):
+            self.refreshed = True
+            return {"filters": {"period": period}, "metrics": {"totalPapers": 12}}
+
+    service = FakeAnalyticsService()
+    payload = service.get_analytics(period="12m")
+
+    assert service.refreshed is True
+    assert payload["metrics"]["totalPapers"] == 12
+
+
+def test_analytics_snapshot_uses_cache_when_data_fingerprint_matches():
+    class FakeAnalyticsService(ReportSnapshotService):
+        def __init__(self):
+            super().__init__(db=object())
+            self.refreshed = False
+
+        def _analytics_data_fingerprint(self):
+            return "same"
+
+        def _get_snapshot(self, snapshot_key):
+            return SimpleNamespace(
+                payload_json={"filters": {"period": "12m"}, "metrics": {"totalPapers": 999}},
+                metadata_json={"dataFingerprint": "same"},
+            )
+
+        def refresh_analytics_snapshot(self, source=None, category=None, period="12m"):
+            self.refreshed = True
+            return {"filters": {"period": period}, "metrics": {"totalPapers": 12}}
+
+    service = FakeAnalyticsService()
+    payload = service.get_analytics(period="12m")
+
+    assert service.refreshed is False
+    assert payload["metrics"]["totalPapers"] == 999
 
 
 def test_acceleration_handles_zero_previous_window():
@@ -102,7 +157,28 @@ def test_clusters_from_counts_keeps_existing_cluster_metadata():
 
     assert clusters == [existing]
     assert clusters[0].cluster_description == "Vision Transformers"
-    assert clusters[0].article_count == 15
+    assert clusters[0].article_count == 0
+
+
+def test_clusters_from_counts_sorts_by_filtered_count_not_global_count():
+    large_global = SimpleNamespace(
+        cluster_id=1,
+        cluster_description="Large Global",
+        article_count=500,
+        metadata_json={},
+        created_at=None,
+    )
+    large_filtered = SimpleNamespace(
+        cluster_id=2,
+        cluster_description="Large Filtered",
+        article_count=10,
+        metadata_json={},
+        created_at=None,
+    )
+
+    clusters = _clusters_from_counts({1: 5, 2: 30}, [large_global, large_filtered])
+
+    assert [cluster.cluster_id for cluster in clusters] == [2, 1]
 
 
 def test_default_bulletin_snapshot_key_matches_default_params():

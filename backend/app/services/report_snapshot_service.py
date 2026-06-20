@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 import hashlib
 import json
@@ -14,9 +15,9 @@ from database.models.ReportSnapshot import ReportSnapshot
 
 
 LEGACY_ANALYTICS_SNAPSHOT_KEY = "analytics:v1"
-ANALYTICS_SCHEMA_VERSION = "analytics:v5"
+ANALYTICS_SCHEMA_VERSION = "analytics:v6"
 DEFAULT_ANALYTICS_PERIOD = "12m"
-ANALYTICS_PERIODS = {"1m": 30, "3m": 90, "6m": 180, "12m": 365, "all": None}
+ANALYTICS_PERIODS = {"1m": 1, "3m": 3, "6m": 6, "12m": 12, "all": None}
 DEFAULT_BULLETIN_LIMIT = 10
 DEFAULT_BULLETIN_INCLUDE_DIGESTS = True
 DEFAULT_BULLETIN_ABSTRACT_LIMIT = 900
@@ -27,6 +28,18 @@ COLORS = [
     "#059669", "#2563eb", "#d97706", "#dc2626", "#7c3aed",
     "#db2777", "#0d9488", "#4f46e5", "#0891b2", "#e11d48",
 ]
+
+
+@dataclass(frozen=True)
+class AnalyticsContext:
+    source: str | None
+    category: str | None
+    period: str
+    reference_date: datetime | None
+    period_start: datetime | None
+    period_end: datetime | None
+    min_publish_date: datetime | None
+    filtered_article_query: object
 
 
 def get_color(cluster_id: int) -> str:
@@ -99,6 +112,148 @@ def default_bulletin_snapshot_key() -> str:
     )
 
 
+def _iso_or_none(value: datetime | None) -> str | None:
+    return value.isoformat() if value else None
+
+
+def _month_start(value: datetime) -> datetime:
+    return value.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+
+def _add_months(value: datetime, months: int) -> datetime:
+    month_index = value.month - 1 + months
+    year = value.year + month_index // 12
+    month = month_index % 12 + 1
+    return value.replace(year=year, month=month)
+
+
+def _month_keys_between(start: datetime | None, end: datetime | None) -> list[str]:
+    if start is None or end is None:
+        return []
+    current = _month_start(start)
+    last = _month_start(end)
+    keys = []
+    while current <= last:
+        keys.append(current.strftime("%Y-%m"))
+        current = _add_months(current, 1)
+    return keys
+
+
+def _month_label(month_key: str) -> str:
+    return datetime.strptime(month_key, "%Y-%m").strftime("%b %y")
+
+
+def _escape_like(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _category_match_clause(category: str):
+    normalized = category.strip()
+    escaped = _escape_like(normalized)
+    categories_text = func.coalesce(Article.categories, "")
+    normalized_categories = func.concat(
+        " ",
+        func.replace(
+            func.replace(
+                func.replace(
+                    func.replace(categories_text, ",", " "),
+                    ";",
+                    " ",
+                ),
+                "|",
+                " ",
+            ),
+            "\n",
+            " ",
+        ),
+        " ",
+    )
+    return or_(
+        Article.primary_category == normalized,
+        normalized_categories.ilike(f"% {escaped} %", escape="\\"),
+    )
+
+
+def _base_analytics_article_query(
+    db: Session,
+    source: str | None = None,
+    category: str | None = None,
+):
+    query = db.query(Article).filter(Article.publish_date.isnot(None))
+    if source:
+        query = query.filter(Article.source == source)
+    if category:
+        query = query.filter(_category_match_clause(category))
+    return query
+
+
+def build_analytics_context(
+    db: Session,
+    source: str | None = None,
+    category: str | None = None,
+    period: str = DEFAULT_ANALYTICS_PERIOD,
+) -> AnalyticsContext:
+    period = normalize_analytics_period(period)
+    base_query = _base_analytics_article_query(db, source=source, category=category)
+    min_publish_date, reference_date = base_query.with_entities(
+        func.min(Article.publish_date),
+        func.max(Article.publish_date),
+    ).one()
+
+    period_start = None
+    period_end = reference_date
+    filtered_article_query = base_query
+    if reference_date is None:
+        filtered_article_query = base_query.filter(Article.id.is_(None))
+    elif ANALYTICS_PERIODS[period] is None:
+        period_start = _month_start(min_publish_date or reference_date)
+        filtered_article_query = base_query.filter(
+            Article.publish_date >= period_start,
+            Article.publish_date <= reference_date,
+        )
+    else:
+        period_start = _month_start(_add_months(reference_date, -(ANALYTICS_PERIODS[period] - 1)))
+        filtered_article_query = base_query.filter(
+            Article.publish_date >= period_start,
+            Article.publish_date <= reference_date,
+        )
+
+    return AnalyticsContext(
+        source=source,
+        category=category,
+        period=period,
+        reference_date=reference_date,
+        period_start=period_start,
+        period_end=period_end,
+        min_publish_date=min_publish_date,
+        filtered_article_query=filtered_article_query,
+    )
+
+
+def analytics_data_fingerprint(db: Session) -> str:
+    article_count, max_publish_date, max_updated_date = (
+        db.query(
+            func.count(Article.id),
+            func.max(Article.publish_date),
+            func.max(Article.updated_date),
+        )
+        .filter(Article.publish_date.isnot(None))
+        .one()
+    )
+    cluster_count, max_cluster_created_at = db.query(
+        func.count(Cluster.id),
+        func.max(Cluster.created_at),
+    ).one()
+    payload = {
+        "articleCount": int(article_count or 0),
+        "maxPublishDate": _iso_or_none(max_publish_date),
+        "maxUpdatedDate": _iso_or_none(max_updated_date),
+        "clusterCount": int(cluster_count or 0),
+        "maxClusterCreatedAt": _iso_or_none(max_cluster_created_at),
+    }
+    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
+
+
 class ReportSnapshotService:
     def __init__(self, db: Session):
         self.db = db
@@ -114,8 +269,9 @@ class ReportSnapshotService:
         key = analytics_snapshot_key(source=source, category=category, period=period)
         if force_refresh:
             return self.refresh_analytics_snapshot(source=source, category=category, period=period)
+        data_fingerprint = self._analytics_data_fingerprint()
         snapshot = self._get_snapshot(key)
-        if snapshot:
+        if snapshot and (snapshot.metadata_json or {}).get("dataFingerprint") == data_fingerprint:
             return with_analytics_defaults(snapshot.payload_json, source=source, category=category, period=period)
         return self.refresh_analytics_snapshot(source=source, category=category, period=period)
 
@@ -160,8 +316,7 @@ class ReportSnapshotService:
     def refresh_default_snapshots(self) -> dict[str, str]:
         self.db.query(ReportSnapshot).filter(
             or_(
-                ReportSnapshot.snapshot_key == LEGACY_ANALYTICS_SNAPSHOT_KEY,
-                ReportSnapshot.snapshot_key.like(f"{ANALYTICS_SCHEMA_VERSION}:%"),
+                ReportSnapshot.snapshot_key.like("analytics:%"),
                 ReportSnapshot.snapshot_key.like("bulletin:%"),
             )
         ).delete(synchronize_session=False)
@@ -186,6 +341,7 @@ class ReportSnapshotService:
         period = normalize_analytics_period(period)
         payload = build_analytics_payload(self.db, source=source, category=category, period=period)
         key = analytics_snapshot_key(source=source, category=category, period=period)
+        data_fingerprint = self._analytics_data_fingerprint()
         self._upsert_snapshot(
             key,
             payload,
@@ -195,6 +351,7 @@ class ReportSnapshotService:
                 "source": source,
                 "category": category,
                 "period": period,
+                "dataFingerprint": data_fingerprint,
             },
         )
         return payload
@@ -251,6 +408,9 @@ class ReportSnapshotService:
     def _get_snapshot(self, snapshot_key: str) -> ReportSnapshot | None:
         return self.db.query(ReportSnapshot).filter(ReportSnapshot.snapshot_key == snapshot_key).first()
 
+    def _analytics_data_fingerprint(self) -> str:
+        return analytics_data_fingerprint(self.db)
+
     def _upsert_snapshot(self, snapshot_key: str, payload, metadata: dict | None = None) -> None:
         generated_at = datetime.now(UTC).replace(tzinfo=None)
         snapshot = self._get_snapshot(snapshot_key)
@@ -263,58 +423,69 @@ class ReportSnapshotService:
         self.db.commit()
 
 
+def _cluster_counts_from_query(article_query) -> dict[int, int]:
+    return {
+        int(cluster_id): int(count)
+        for cluster_id, count in (
+            article_query.with_entities(Article.cluster_id, func.count(Article.id))
+            .filter(Article.cluster_id.isnot(None))
+            .group_by(Article.cluster_id)
+            .all()
+        )
+    }
+
+
+def _clusters_for_counts(db: Session, cluster_counts: dict[int, int]) -> list[Cluster]:
+    cluster_ids = list(cluster_counts)
+    cluster_rows = (
+        db.query(Cluster).filter(Cluster.cluster_id.in_(cluster_ids)).all()
+        if cluster_ids
+        else []
+    )
+    return _clusters_from_counts(cluster_counts, cluster_rows)
+
+
+def _time_range_payload(context: AnalyticsContext) -> dict:
+    return {
+        "referenceDate": _iso_or_none(context.reference_date),
+        "periodStart": _iso_or_none(context.period_start),
+        "periodEnd": _iso_or_none(context.period_end),
+        "minPublishDate": _iso_or_none(context.min_publish_date),
+    }
+
+
+def _coerce_analytics_context(
+    context_or_db,
+    source: str | None = None,
+    category: str | None = None,
+    period: str = DEFAULT_ANALYTICS_PERIOD,
+) -> AnalyticsContext:
+    if hasattr(context_or_db, "filtered_article_query"):
+        return context_or_db
+    return build_analytics_context(context_or_db, source=source, category=category, period=period)
+
+
 def build_analytics_payload(
     db: Session,
     source: str | None = None,
     category: str | None = None,
     period: str = DEFAULT_ANALYTICS_PERIOD,
 ) -> dict:
-    period = normalize_analytics_period(period)
-    article_query = _filtered_articles_query(db, source=source, category=category, period=period)
+    context = build_analytics_context(db, source=source, category=category, period=period)
+    article_query = context.filtered_article_query
     total_papers = article_query.count()
-    cluster_ids = [
-        row[0]
-        for row in article_query.with_entities(Article.cluster_id)
-        .filter(Article.cluster_id.isnot(None))
-        .distinct()
-        .all()
-    ]
-    active_clusters = len(cluster_ids)
-    clustered_papers = article_query.filter(Article.cluster_id.isnot(None)).count()
+    cluster_counts = _cluster_counts_from_query(article_query)
+    clusters = _clusters_for_counts(db, cluster_counts)
+    active_clusters = len(cluster_counts)
+    clustered_papers = sum(cluster_counts.values())
     avg_papers_per_cluster = clustered_papers / active_clusters if active_clusters else 0
-    week_ago = datetime.utcnow() - timedelta(days=7)
-    pdf_available = (
-        article_query
-        .filter(
-            or_(
-                Article.pdf_url.isnot(None),
-                Article.metadata_json["has_pdf"].as_boolean().is_(True),
-            )
-        )
-        .count()
-    )
-
-    cluster_counts = dict(
-        article_query.with_entities(Article.cluster_id, func.count(Article.id))
-        .filter(Article.cluster_id.isnot(None))
-        .group_by(Article.cluster_id)
-        .all()
-    )
-    cluster_rows = (
-        db.query(Cluster)
-        .filter(Cluster.cluster_id.in_(cluster_ids))
-        .order_by(Cluster.article_count.desc())
-        .all()
-        if cluster_ids
-        else []
-    )
-    clusters = _clusters_from_counts(cluster_counts, cluster_rows)
+    week_ago = context.reference_date - timedelta(days=7) if context.reference_date else None
 
     formatted_clusters = [
         _format_cluster_payload(
             cluster,
             _cluster_representation_score(cluster),
-            paper_count=int(cluster_counts.get(cluster.cluster_id, cluster.article_count or 0)),
+            paper_count=int(cluster_counts.get(cluster.cluster_id, 0)),
         )
         for cluster in clusters
     ]
@@ -323,13 +494,18 @@ def build_analytics_payload(
         "totalPapers": total_papers,
         "activeClusters": active_clusters,
         "avgPapersPerCluster": avg_papers_per_cluster,
-        "weeklyPicks": article_query.filter(Article.publish_date >= week_ago).count(),
+        "weeklyPicks": article_query.filter(Article.publish_date >= week_ago).count() if week_ago else 0,
         "clusteredPapers": clustered_papers,
-        "pdfAvailable": pdf_available,
     }
 
     bar_data = [
-        {"name": cluster["name"], "count": cluster["paper_count"], "color": cluster["color"], "papers": cluster["paper_count"]}
+        {
+            "name": cluster["name"],
+            "fullName": cluster["name"],
+            "count": cluster["paper_count"],
+            "color": cluster["color"],
+            "papers": cluster["paper_count"],
+        }
         for cluster in formatted_clusters
     ]
     pie_data = [{"name": item["name"], "value": item["count"], "color": item["color"]} for item in bar_data[:8]]
@@ -345,20 +521,10 @@ def build_analytics_payload(
         for cluster in formatted_clusters
     ]
 
-    monthly_data = _monthly_data(db, source=source, category=category, period=period)
-    source_distribution = [
-        {"source": source or "unknown", "count": count}
-        for source, count in _filtered_articles_query(db, category=category, period=period)
-        .with_entities(Article.source, func.count(Article.id))
-        .group_by(Article.source)
-        .all()
-    ]
-    category_distribution = _category_distribution(db, source=source, period=period)
-    cluster_trends = _cluster_trend_data(db, clusters, source=source, category=category, period=period)
-    cluster_trend_data = cluster_trends["wide"]
-    cluster_trend_series = cluster_trends["series"]
-    rising_topics = _rising_topics(db, clusters, source=source, category=category)
-    cluster_quality = _cluster_quality(db, clusters)
+    category_context = build_analytics_context(db, source=source, category=None, period=context.period)
+    global_context = build_analytics_context(db, period="all")
+    global_cluster_counts = _cluster_counts_from_query(global_context.filtered_article_query)
+    global_clusters = _clusters_for_counts(db, global_cluster_counts)
 
     return {
         "schemaVersion": ANALYTICS_SCHEMA_VERSION,
@@ -366,21 +532,24 @@ def build_analytics_payload(
         "filters": {
             "source": source,
             "category": category,
-            "period": period,
+            "period": context.period,
         },
+        "timeRange": _time_range_payload(context),
         "metrics": metrics,
         "barData": bar_data,
         "pieData": pie_data,
         "scatterData": scatter_data,
-        "monthlyData": monthly_data,
+        "monthlyData": _monthly_data(context),
         "clusters": formatted_clusters,
-        "papers": [],
-        "sourceDistribution": source_distribution,
-        "categoryDistribution": category_distribution,
-        "clusterTrendData": cluster_trend_data,
-        "clusterTrendSeries": cluster_trend_series,
-        "risingTopics": rising_topics,
-        "clusterQuality": cluster_quality,
+        "categoryOptions": _category_options(category_context),
+        "clusterTrendSeries": _cluster_trend_series(context, clusters, cluster_counts),
+        "risingTopics": _rising_topics(context, clusters, cluster_counts),
+        "filteredClusterQuality": _cluster_quality(article_query, clusters, cluster_counts),
+        "globalClusterQuality": _cluster_quality(
+            global_context.filtered_article_query,
+            global_clusters,
+            global_cluster_counts,
+        ),
     }
 
 
@@ -512,27 +681,29 @@ def empty_analytics_payload(
             "category": category,
             "period": period,
         },
+        "timeRange": {
+            "referenceDate": None,
+            "periodStart": None,
+            "periodEnd": None,
+            "minPublishDate": None,
+        },
         "metrics": {
             "totalPapers": 0,
             "activeClusters": 0,
             "avgPapersPerCluster": 0,
             "weeklyPicks": 0,
             "clusteredPapers": 0,
-            "pdfAvailable": 0,
         },
         "barData": [],
         "pieData": [],
         "scatterData": [],
         "monthlyData": [],
         "clusters": [],
-        "papers": [],
-        "sourceDistribution": [],
-        "categoryDistribution": [],
-        "clusterTrendData": [],
+        "categoryOptions": [],
         "clusterTrendSeries": [],
         "risingTopics": [],
-        "clusterQuality": empty_cluster_quality(),
-        "snapshotMissing": snapshot_missing,
+        "filteredClusterQuality": empty_cluster_quality(),
+        "globalClusterQuality": empty_cluster_quality(),
     }
 
 
@@ -546,7 +717,15 @@ def with_analytics_defaults(
     merged = {**base, **(payload or {})}
     merged["metrics"] = {**base["metrics"], **(payload or {}).get("metrics", {})}
     merged["filters"] = {**base["filters"], **(payload or {}).get("filters", {})}
-    merged["clusterQuality"] = {**base["clusterQuality"], **(payload or {}).get("clusterQuality", {})}
+    merged["timeRange"] = {**base["timeRange"], **(payload or {}).get("timeRange", {})}
+    merged["filteredClusterQuality"] = {
+        **base["filteredClusterQuality"],
+        **(payload or {}).get("filteredClusterQuality", {}),
+    }
+    merged["globalClusterQuality"] = {
+        **base["globalClusterQuality"],
+        **(payload or {}).get("globalClusterQuality", {}),
+    }
     return merged
 
 
@@ -656,10 +835,8 @@ def _clusters_from_counts(cluster_counts: dict[int, int], clusters: list[Cluster
                 metadata_json={},
                 created_at=None,
             )
-        elif not cluster.article_count:
-            cluster.article_count = int(paper_count)
         merged.append(cluster)
-    return sorted(merged, key=lambda cluster: cluster.article_count or 0, reverse=True)
+    return sorted(merged, key=lambda cluster: cluster_counts.get(cluster.cluster_id, 0), reverse=True)
 
 
 def _representative_scores(cluster: Cluster) -> dict[int, float]:
@@ -686,31 +863,14 @@ def _filtered_articles_query(
     category: str | None = None,
     period: str = DEFAULT_ANALYTICS_PERIOD,
 ):
-    query = db.query(Article)
-    if source:
-        query = query.filter(Article.source == source)
-    if category:
-        query = query.filter(
-            or_(
-                Article.primary_category == category,
-                Article.categories.ilike(f"%{category}%"),
-            )
-        )
-    days = ANALYTICS_PERIODS[normalize_analytics_period(period)]
-    if days is not None:
-        query = query.filter(Article.publish_date >= datetime.utcnow() - timedelta(days=days))
-    return query
+    return build_analytics_context(db, source=source, category=category, period=period).filtered_article_query
 
 
-def _category_distribution(
-    db: Session,
-    source: str | None = None,
-    period: str = DEFAULT_ANALYTICS_PERIOD,
-) -> list[dict]:
+def _category_options(context: AnalyticsContext) -> list[dict]:
     primary_categories = [
         primary_category
         for primary_category, _count in (
-            _filtered_articles_query(db, source=source, period=period)
+            context.filtered_article_query
             .with_entities(Article.primary_category, func.count(Article.id))
             .filter(Article.primary_category.isnot(None), Article.primary_category != "")
             .group_by(Article.primary_category)
@@ -727,10 +887,7 @@ def _category_distribution(
             func.sum(
                 case(
                     (
-                        or_(
-                            Article.primary_category == primary_category,
-                            Article.categories.ilike(f"%{primary_category}%"),
-                        ),
+                        _category_match_clause(primary_category),
                         1,
                     ),
                     else_=0,
@@ -740,43 +897,101 @@ def _category_distribution(
         ).label(f"category_{index}")
         for index, primary_category in enumerate(primary_categories)
     ]
-    row = _filtered_articles_query(db, source=source, period=period).with_entities(*count_columns).one()
+    row = context.filtered_article_query.with_entities(*count_columns).one()
     counts = row._mapping
-    distribution = [
+    options = [
         {
             "category": primary_category,
             "count": int(counts[f"category_{index}"] or 0),
         }
         for index, primary_category in enumerate(primary_categories)
     ]
-    return sorted(distribution, key=lambda item: (-item["count"], item["category"]))
+    return sorted(options, key=lambda item: (-item["count"], item["category"]))
+
+
+def _category_distribution(
+    db: Session,
+    source: str | None = None,
+    period: str = DEFAULT_ANALYTICS_PERIOD,
+) -> list[dict]:
+    return _category_options(build_analytics_context(db, source=source, period=period))
 
 
 def _monthly_data(
-    db: Session,
+    context_or_db,
     source: str | None = None,
     category: str | None = None,
     period: str = DEFAULT_ANALYTICS_PERIOD,
 ) -> list[dict]:
+    context = _coerce_analytics_context(context_or_db, source=source, category=category, period=period)
     monthly_rows = (
-        _filtered_articles_query(db, source=source, category=category, period=period)
+        context.filtered_article_query
         .with_entities(
             func.to_char(func.date_trunc("month", Article.publish_date), "YYYY-MM").label("month_key"),
             func.count(Article.id).label("count"),
         )
-        .filter(Article.publish_date.isnot(None))
         .group_by("month_key")
         .order_by("month_key")
         .all()
     )
+    counts = {row._mapping["month_key"]: int(row._mapping["count"]) for row in monthly_rows}
     return [
         {
-            "month": datetime.strptime(row._mapping["month_key"], "%Y-%m").strftime("%b %y"),
-            "count": int(row._mapping["count"]),
-            "publications": int(row._mapping["count"]),
+            "month": _month_label(month_key),
+            "monthKey": month_key,
+            "count": counts.get(month_key, 0),
+            "publications": counts.get(month_key, 0),
         }
-        for row in monthly_rows[-12:]
+        for month_key in _month_keys_between(context.period_start, context.period_end)
     ]
+
+
+def _cluster_trend_series(
+    context: AnalyticsContext,
+    clusters: list[Cluster],
+    cluster_counts: dict[int, int],
+) -> list[dict]:
+    top_clusters = sorted(
+        clusters,
+        key=lambda cluster: cluster_counts.get(cluster.cluster_id, 0),
+        reverse=True,
+    )[:8]
+    if not top_clusters:
+        return []
+
+    cluster_ids = [cluster.cluster_id for cluster in top_clusters]
+    cluster_names = {
+        cluster.cluster_id: cluster.cluster_description or f"Cluster {cluster.cluster_id}"
+        for cluster in top_clusters
+    }
+    rows = (
+        context.filtered_article_query
+        .with_entities(
+            Article.cluster_id,
+            func.to_char(func.date_trunc("month", Article.publish_date), "YYYY-MM").label("month_key"),
+            func.count(Article.id).label("count"),
+        )
+        .filter(Article.cluster_id.in_(cluster_ids))
+        .group_by(Article.cluster_id, "month_key")
+        .order_by("month_key")
+        .all()
+    )
+
+    counts = {(int(cluster_id), month_key): int(count) for cluster_id, month_key, count in rows}
+    series = []
+    for month_key in _month_keys_between(context.period_start, context.period_end):
+        for cluster_id in cluster_ids:
+            series.append(
+                {
+                    "cluster_id": str(cluster_id),
+                    "cluster_name": cluster_names.get(cluster_id, f"Cluster {cluster_id}"),
+                    "month": _month_label(month_key),
+                    "monthKey": month_key,
+                    "count": counts.get((cluster_id, month_key), 0),
+                }
+            )
+
+    return series
 
 
 def _cluster_trend_data(
@@ -786,65 +1001,53 @@ def _cluster_trend_data(
     category: str | None = None,
     period: str = DEFAULT_ANALYTICS_PERIOD,
 ) -> dict[str, list[dict]]:
-    top_clusters = sorted(clusters, key=lambda cluster: cluster.article_count or 0, reverse=True)[:8]
-    if not top_clusters:
-        return {"wide": [], "series": []}
-
-    cluster_ids = [cluster.cluster_id for cluster in top_clusters]
-    cluster_names = {
-        cluster.cluster_id: cluster.cluster_description or f"Cluster {cluster.cluster_id}"
-        for cluster in top_clusters
-    }
-    rows = (
-        _filtered_articles_query(db, source=source, category=category, period=period)
-        .with_entities(
-            Article.cluster_id,
-            func.to_char(func.date_trunc("month", Article.publish_date), "YYYY-MM").label("month_key"),
-            func.count(Article.id).label("count"),
-        )
-        .filter(Article.cluster_id.in_(cluster_ids), Article.publish_date.isnot(None))
-        .group_by(Article.cluster_id, "month_key")
-        .order_by("month_key")
-        .all()
-    )
-
+    context = build_analytics_context(db, source=source, category=category, period=period)
+    cluster_counts = _cluster_counts_from_query(context.filtered_article_query)
+    series = _cluster_trend_series(context, clusters, cluster_counts)
     by_month: dict[str, dict] = {}
-    series = []
-    for cluster_id, month_key, count in rows:
-        month = datetime.strptime(month_key, "%Y-%m").strftime("%b %y")
-        month_payload = by_month.setdefault(month_key, {"month": month, "monthKey": month_key, "clusters": {}, "total": 0})
-        month_payload["clusters"][str(cluster_id)] = int(count)
-        month_payload["total"] += int(count)
-        series.append(
-            {
-                "cluster_id": str(cluster_id),
-                "cluster_name": cluster_names.get(cluster_id, f"Cluster {cluster_id}"),
-                "month": month,
-                "monthKey": month_key,
-                "count": int(count),
-            }
+    for item in series:
+        month_payload = by_month.setdefault(
+            item["monthKey"],
+            {"month": item["month"], "monthKey": item["monthKey"], "clusters": {}, "total": 0},
         )
-
+        month_payload["clusters"][item["cluster_id"]] = item["count"]
+        month_payload["total"] += item["count"]
     return {"wide": [by_month[key] for key in sorted(by_month)], "series": series}
 
 
 def _rising_topics(
-    db: Session,
+    context_or_db,
     clusters: list[Cluster],
+    cluster_counts: dict[int, int] | None = None,
     source: str | None = None,
     category: str | None = None,
 ) -> list[dict]:
-    now = datetime.utcnow()
+    if cluster_counts is not None and not isinstance(cluster_counts, dict):
+        source = cluster_counts
+        cluster_counts = None
+    context = _coerce_analytics_context(context_or_db, source=source, category=category, period="all")
+    if cluster_counts is None:
+        cluster_counts = _cluster_counts_from_query(context.filtered_article_query)
+    if context.reference_date is None:
+        return []
+    reference_date = context.reference_date
     rows = []
     for cluster in clusters:
         counts = {}
         for days in (7, 30, 90):
-            last_start = now - timedelta(days=days)
-            prev_start = now - timedelta(days=days * 2)
-            base_query = _filtered_articles_query(db, source=source, category=category, period="all").filter(
+            last_start = reference_date - timedelta(days=days)
+            prev_start = reference_date - timedelta(days=days * 2)
+            base_query = _base_analytics_article_query(
+                context.filtered_article_query.session,
+                source=context.source,
+                category=context.category,
+            ).filter(
                 Article.cluster_id == cluster.cluster_id
             )
-            counts[f"last_{days}d"] = base_query.filter(Article.publish_date >= last_start).count()
+            counts[f"last_{days}d"] = base_query.filter(
+                Article.publish_date >= last_start,
+                Article.publish_date <= reference_date,
+            ).count()
             counts[f"prev_{days}d"] = base_query.filter(
                 Article.publish_date >= prev_start,
                 Article.publish_date < last_start,
@@ -858,7 +1061,7 @@ def _rising_topics(
             {
                 "cluster_id": str(cluster.cluster_id),
                 "name": cluster.cluster_description or f"Cluster {cluster.cluster_id}",
-                "paper_count": cluster.article_count or 0,
+                "paper_count": int(cluster_counts.get(cluster.cluster_id, 0)),
                 **counts,
                 "acceleration_7d": round(acceleration_7d, 4),
                 "acceleration_30d": round(acceleration_30d, 4),
@@ -875,16 +1078,23 @@ def acceleration(current: int, previous: int) -> float:
     return (current - previous) / max(previous, 1)
 
 
-def _cluster_quality(db: Session, clusters: list[Cluster]) -> dict:
-    total_papers_with_embedding = db.query(Article).filter(Article.embedding.isnot(None)).count()
-    outlier_count = (
-        db.query(Article)
-        .filter(Article.embedding.isnot(None), Article.cluster_id.is_(None))
-        .count()
+def _cluster_quality(article_query, clusters: list[Cluster], cluster_counts: dict[int, int] | None = None) -> dict:
+    if cluster_counts is None and hasattr(article_query, "query"):
+        cluster_counts = {cluster.cluster_id: int(cluster.article_count or 0) for cluster in clusters}
+        article_query = _base_analytics_article_query(article_query)
+    cluster_counts = cluster_counts or {}
+    total_papers_with_embedding = article_query.filter(Article.embedding.isnot(None)).count()
+    outlier_count = article_query.filter(
+        Article.embedding.isnot(None),
+        Article.cluster_id.is_(None),
+    ).count()
+    clustered_papers = sum(cluster_counts.values())
+    largest_cluster = max(
+        clusters,
+        key=lambda cluster: cluster_counts.get(cluster.cluster_id, 0),
+        default=None,
     )
-    clustered_papers = db.query(Article).filter(Article.cluster_id.isnot(None)).count()
-    largest_cluster = max(clusters, key=lambda cluster: cluster.article_count or 0, default=None)
-    largest_count = largest_cluster.article_count if largest_cluster else 0
+    largest_count = cluster_counts.get(largest_cluster.cluster_id, 0) if largest_cluster else 0
     representation_scores = [
         _cluster_representation_score(cluster)
         for cluster in clusters
@@ -935,11 +1145,7 @@ def _matching_article_query(
     if source:
         query = query.filter(Article.source == source)
     if categories:
-        category_clauses = []
-        for item in categories:
-            category_clauses.append(Article.primary_category == item)
-            category_clauses.append(Article.categories.ilike(f"%{item}%"))
-        query = query.filter(or_(*category_clauses))
+        query = query.filter(or_(*[_category_match_clause(item) for item in categories]))
     if period_start:
         query = query.filter(Article.publish_date >= period_start)
     if period_end:

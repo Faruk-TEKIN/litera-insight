@@ -15,15 +15,18 @@ Copy these files into:
 
 ```bash
 git clone <repo-url>
-cp -r <your-data-folder>/* <repo-root>/exports/retrieval/
+cp -r /path/to/database/* <repo-root>/exports/retrieval/
 cd <repo-root>
 docker compose up --build
 ```
+
+`/path/to/database`, `academic_platform.dump` ve `articles_bm25.sqlite` dosyalarının bulunduğu yerel klasördür.
 
 ## What happens automatically
 
 - PostgreSQL restores `exports/retrieval/academic_platform.dump` on first initialization.
 - The backend waits for PostgreSQL, applies Alembic migrations, and warms cached snapshots.
+- Ollama starts automatically and pulls the configured model.
 - The frontend reads the restored PostgreSQL data and the mounted BM25 SQLite index.
 
 ## Important note

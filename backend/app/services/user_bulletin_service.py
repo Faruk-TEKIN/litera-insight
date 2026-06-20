@@ -6,7 +6,6 @@ from sqlalchemy.orm import Session
 from backend.app.schemas.bulletin import BulletinPreferenceRequest
 from backend.app.services.report_snapshot_service import (
     DEFAULT_BULLETIN_INCLUDE_DIGESTS,
-    DEFAULT_BULLETIN_LIMIT,
     _format_cluster_payload,
     bulletin_snapshot_key,
 )
@@ -15,6 +14,9 @@ from database.models.ArticleData import Article
 from database.models.ClusterData import Cluster
 from database.models.ReportSnapshot import ReportSnapshot
 from database.models.UserBulletinPreference import UserBulletinPreference
+
+
+USER_BULLETIN_PAPER_LIMIT: int | None = None
 
 
 class UserBulletinService:
@@ -44,7 +46,12 @@ class UserBulletinService:
             "categories": categories,
         }
 
-    def get_user_bulletin(self, user_id: int, force_refresh: bool = False) -> dict:
+    def get_user_bulletin(
+        self,
+        user_id: int,
+        force_refresh: bool = False,
+        limit: int | None = USER_BULLETIN_PAPER_LIMIT,
+    ) -> dict:
         preference = self._get_preference(user_id)
         if preference is None:
             return {
@@ -53,12 +60,20 @@ class UserBulletinService:
                 "bulletin": [],
             }
 
+        selected_cluster_ids = preference.selected_cluster_ids_json or []
+        selected_categories = preference.selected_categories_json or []
+        desired_snapshot_key = bulletin_snapshot_key(
+            limit=limit,
+            include_digests=DEFAULT_BULLETIN_INCLUDE_DIGESTS,
+            cluster_ids=selected_cluster_ids,
+            categories=selected_categories,
+        )
         payload = None
         snapshot = self._get_snapshot(preference.bulletin_snapshot_key)
-        if snapshot and not force_refresh:
+        if snapshot and not force_refresh and preference.bulletin_snapshot_key == desired_snapshot_key:
             payload = snapshot.payload_json
         else:
-            payload = self._refresh_preference_snapshot(preference)
+            payload = self._refresh_preference_snapshot(preference, limit=limit)
 
         return {
             "configured": True,
@@ -67,6 +82,7 @@ class UserBulletinService:
         }
 
     def save_preference(self, user_id: int, request: BulletinPreferenceRequest) -> dict:
+        limit = USER_BULLETIN_PAPER_LIMIT
         selected_cluster_ids = sorted({int(value) for value in request.cluster_ids}) if request.selection_type == "clusters" else []
         selected_categories = (
             sorted({value.strip() for value in request.categories if value and value.strip()})
@@ -74,13 +90,13 @@ class UserBulletinService:
             else []
         )
         snapshot_key = bulletin_snapshot_key(
-            limit=request.limit,
+            limit=limit,
             include_digests=request.include_digests,
             cluster_ids=selected_cluster_ids,
             categories=selected_categories,
         )
         payload = self.snapshots.refresh_bulletin_snapshot(
-            limit=request.limit,
+            limit=limit,
             include_digests=request.include_digests,
             cluster_ids=selected_cluster_ids,
             categories=selected_categories,
@@ -111,11 +127,21 @@ class UserBulletinService:
             "bulletin": payload,
         }
 
-    def _refresh_preference_snapshot(self, preference: UserBulletinPreference) -> list[dict]:
+    def _refresh_preference_snapshot(
+        self,
+        preference: UserBulletinPreference,
+        limit: int | None = USER_BULLETIN_PAPER_LIMIT,
+    ) -> list[dict]:
         selected_cluster_ids = preference.selected_cluster_ids_json or []
         selected_categories = preference.selected_categories_json or []
         payload = self.snapshots.refresh_bulletin_snapshot(
-            limit=DEFAULT_BULLETIN_LIMIT,
+            limit=limit,
+            include_digests=DEFAULT_BULLETIN_INCLUDE_DIGESTS,
+            cluster_ids=selected_cluster_ids,
+            categories=selected_categories,
+        )
+        preference.bulletin_snapshot_key = bulletin_snapshot_key(
+            limit=limit,
             include_digests=DEFAULT_BULLETIN_INCLUDE_DIGESTS,
             cluster_ids=selected_cluster_ids,
             categories=selected_categories,

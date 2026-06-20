@@ -1,9 +1,10 @@
 from datetime import UTC, datetime, timedelta
 import hashlib
 import json
+from types import SimpleNamespace
 
 import numpy as np
-from sqlalchemy import func, or_
+from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session
 
 from backend.app.services.digest_service import DigestService
@@ -13,9 +14,9 @@ from database.models.ReportSnapshot import ReportSnapshot
 
 
 LEGACY_ANALYTICS_SNAPSHOT_KEY = "analytics:v1"
-ANALYTICS_SCHEMA_VERSION = "analytics:v2"
+ANALYTICS_SCHEMA_VERSION = "analytics:v5"
 DEFAULT_ANALYTICS_PERIOD = "12m"
-ANALYTICS_PERIODS = {"3m": 90, "6m": 180, "12m": 365, "all": None}
+ANALYTICS_PERIODS = {"1m": 30, "3m": 90, "6m": 180, "12m": 365, "all": None}
 DEFAULT_BULLETIN_LIMIT = 10
 DEFAULT_BULLETIN_INCLUDE_DIGESTS = True
 DEFAULT_BULLETIN_ABSTRACT_LIMIT = 900
@@ -68,7 +69,7 @@ def calculate_cosine_similarity(v1, v2, default: float = 0.0) -> float:
 
 
 def bulletin_snapshot_key(
-    limit: int,
+    limit: int | None,
     include_digests: bool,
     period_start: datetime | None = None,
     period_end: datetime | None = None,
@@ -116,15 +117,6 @@ class ReportSnapshotService:
         snapshot = self._get_snapshot(key)
         if snapshot:
             return with_analytics_defaults(snapshot.payload_json, source=source, category=category, period=period)
-        if key == ANALYTICS_SNAPSHOT_KEY:
-            legacy_snapshot = self._get_snapshot(LEGACY_ANALYTICS_SNAPSHOT_KEY)
-            if legacy_snapshot:
-                return with_analytics_defaults(
-                    legacy_snapshot.payload_json,
-                    source=source,
-                    category=category,
-                    period=period,
-                )
         return self.refresh_analytics_snapshot(source=source, category=category, period=period)
 
     def get_bulletin(
@@ -209,7 +201,7 @@ class ReportSnapshotService:
 
     def refresh_bulletin_snapshot(
         self,
-        limit: int = DEFAULT_BULLETIN_LIMIT,
+        limit: int | None = DEFAULT_BULLETIN_LIMIT,
         include_digests: bool = DEFAULT_BULLETIN_INCLUDE_DIGESTS,
         period_start: datetime | None = None,
         period_end: datetime | None = None,
@@ -308,7 +300,7 @@ def build_analytics_payload(
         .group_by(Article.cluster_id)
         .all()
     )
-    clusters = (
+    cluster_rows = (
         db.query(Cluster)
         .filter(Cluster.cluster_id.in_(cluster_ids))
         .order_by(Cluster.article_count.desc())
@@ -316,6 +308,7 @@ def build_analytics_payload(
         if cluster_ids
         else []
     )
+    clusters = _clusters_from_counts(cluster_counts, cluster_rows)
 
     formatted_clusters = [
         _format_cluster_payload(
@@ -360,17 +353,7 @@ def build_analytics_payload(
         .group_by(Article.source)
         .all()
     ]
-    category_distribution = [
-        {"category": category or "unknown", "count": count}
-        for category, count in (
-            _filtered_articles_query(db, source=source, period=period)
-            .with_entities(Article.primary_category, func.count(Article.id))
-            .group_by(Article.primary_category)
-            .order_by(func.count(Article.id).desc())
-            .limit(20)
-            .all()
-        )
-    ]
+    category_distribution = _category_distribution(db, source=source, period=period)
     cluster_trends = _cluster_trend_data(db, clusters, source=source, category=category, period=period)
     cluster_trend_data = cluster_trends["wide"]
     cluster_trend_series = cluster_trends["series"]
@@ -403,7 +386,7 @@ def build_analytics_payload(
 
 def build_bulletin_payload(
     db: Session,
-    limit: int = DEFAULT_BULLETIN_LIMIT,
+    limit: int | None = DEFAULT_BULLETIN_LIMIT,
     include_digests: bool = DEFAULT_BULLETIN_INCLUDE_DIGESTS,
     period_start: datetime | None = None,
     period_end: datetime | None = None,
@@ -484,6 +467,7 @@ def build_bulletin_payload(
         }
 
         if include_digests:
+            digest_article_limit = min(max(limit or DEFAULT_BULLETIN_LIMIT, 1), 10)
             digest = digest_service.get_or_create_cluster_digest(
                 cluster_id=cluster.cluster_id,
                 period_start=period_start,
@@ -491,7 +475,7 @@ def build_bulletin_payload(
                 category=category,
                 categories=category_filters,
                 source=source,
-                max_articles=min(max(limit, 1), 10),
+                max_articles=digest_article_limit,
                 use_llm=False,
             )
             cluster_payload["digest"] = _compact_digest(digest)
@@ -659,6 +643,25 @@ def _format_cluster_payload(
     return payload
 
 
+def _clusters_from_counts(cluster_counts: dict[int, int], clusters: list[Cluster]) -> list[Cluster]:
+    existing_by_id = {cluster.cluster_id: cluster for cluster in clusters}
+    merged = []
+    for cluster_id, paper_count in cluster_counts.items():
+        cluster = existing_by_id.get(cluster_id)
+        if cluster is None:
+            cluster = SimpleNamespace(
+                cluster_id=cluster_id,
+                cluster_description=f"Cluster {cluster_id}",
+                article_count=int(paper_count),
+                metadata_json={},
+                created_at=None,
+            )
+        elif not cluster.article_count:
+            cluster.article_count = int(paper_count)
+        merged.append(cluster)
+    return sorted(merged, key=lambda cluster: cluster.article_count or 0, reverse=True)
+
+
 def _representative_scores(cluster: Cluster) -> dict[int, float]:
     if not cluster.metadata_json:
         return {}
@@ -697,6 +700,56 @@ def _filtered_articles_query(
     if days is not None:
         query = query.filter(Article.publish_date >= datetime.utcnow() - timedelta(days=days))
     return query
+
+
+def _category_distribution(
+    db: Session,
+    source: str | None = None,
+    period: str = DEFAULT_ANALYTICS_PERIOD,
+) -> list[dict]:
+    primary_categories = [
+        primary_category
+        for primary_category, _count in (
+            _filtered_articles_query(db, source=source, period=period)
+            .with_entities(Article.primary_category, func.count(Article.id))
+            .filter(Article.primary_category.isnot(None), Article.primary_category != "")
+            .group_by(Article.primary_category)
+            .order_by(func.count(Article.id).desc(), Article.primary_category.asc())
+            .limit(20)
+            .all()
+        )
+    ]
+    if not primary_categories:
+        return []
+
+    count_columns = [
+        func.coalesce(
+            func.sum(
+                case(
+                    (
+                        or_(
+                            Article.primary_category == primary_category,
+                            Article.categories.ilike(f"%{primary_category}%"),
+                        ),
+                        1,
+                    ),
+                    else_=0,
+                )
+            ),
+            0,
+        ).label(f"category_{index}")
+        for index, primary_category in enumerate(primary_categories)
+    ]
+    row = _filtered_articles_query(db, source=source, period=period).with_entities(*count_columns).one()
+    counts = row._mapping
+    distribution = [
+        {
+            "category": primary_category,
+            "count": int(counts[f"category_{index}"] or 0),
+        }
+        for index, primary_category in enumerate(primary_categories)
+    ]
+    return sorted(distribution, key=lambda item: (-item["count"], item["category"]))
 
 
 def _monthly_data(
@@ -897,7 +950,7 @@ def _matching_article_query(
 def _cluster_articles(
     db: Session,
     cluster: Cluster,
-    limit: int,
+    limit: int | None,
     categories: list[str] | None = None,
     source: str | None = None,
     period_start: datetime | None = None,
@@ -928,10 +981,10 @@ def _cluster_articles(
         )
         by_id = {article.id: article for article in articles}
         ordered_articles = [by_id[article_id] for article_id in representative_ids if article_id in by_id]
-        if len(ordered_articles) >= limit:
+        if limit is not None and len(ordered_articles) >= limit:
             return ordered_articles[:limit]
 
-        remaining = (
+        remaining_query = (
             _matching_article_query(
                 db,
                 cluster_id=cluster.cluster_id,
@@ -941,12 +994,13 @@ def _cluster_articles(
                 period_end=period_end,
             )
             .filter(Article.id.notin_(representative_ids))
-            .limit(limit - len(ordered_articles))
-            .all()
         )
+        if limit is not None:
+            remaining_query = remaining_query.limit(limit - len(ordered_articles))
+        remaining = remaining_query.all()
         return ordered_articles + remaining
 
-    return (
+    query = (
         _matching_article_query(
             db,
             cluster_id=cluster.cluster_id,
@@ -955,6 +1009,7 @@ def _cluster_articles(
             period_start=period_start,
             period_end=period_end,
         )
-        .limit(limit)
-        .all()
     )
+    if limit is not None:
+        query = query.limit(limit)
+    return query.all()

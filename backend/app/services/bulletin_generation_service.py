@@ -11,7 +11,7 @@ PROMPT_VERSION = "weeks_best_editor_v1"
 
 
 class BulletinGenerationService:
-    def __init__(self, use_llm: bool = False):
+    def __init__(self, use_llm: bool = True):
         self.use_llm = use_llm
         self.ollama = get_ollama_service()
 
@@ -19,13 +19,20 @@ class BulletinGenerationService:
         top_cards = cards[:top_count]
         watch_cards = cards[top_count:]
         markdown = ""
+        generation_source = "deterministic"
+        llm_error = None
         if self.use_llm and cards:
             try:
                 markdown = self.ollama.generate(_writer_prompt(selection, top_cards, watch_cards)).strip()
+                if markdown:
+                    generation_source = "ollama"
             except (OllamaServiceError, RuntimeError):
+                llm_error = "Ollama generation failed; deterministic fallback was used."
                 markdown = ""
         if not markdown:
             markdown = _deterministic_markdown(selection, top_cards, watch_cards)
+            if self.use_llm:
+                generation_source = "deterministic_fallback"
 
         return {
             "title": f"Week's Best - {selection.selection_label}",
@@ -42,6 +49,8 @@ class BulletinGenerationService:
                 for card in watch_cards
             ],
             "full_markdown": markdown,
+            "generation_source": generation_source,
+            "llm_error": llm_error,
         }
 
 
@@ -70,7 +79,9 @@ Required structure:
 ...
 
 ## Top Papers
-...
+For each top paper, use this exact format:
+### 1. Exact Paper Title
+One concise paragraph with source citation.
 
 ## Emerging Trend
 ...

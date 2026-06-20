@@ -33,8 +33,12 @@ class BulletinValidationService:
             errors.append("No source citations were found.")
         if len({card["article_id"] for card in cards}) != len(cards):
             errors.append("Duplicate article ids were selected.")
-        if cards and "## Top Papers" in markdown and "### 1." not in markdown:
-            errors.append("Top Papers section is empty.")
+        if cards and "Top Papers" not in missing_sections:
+            top_papers_body = _section_body(markdown, "Top Papers")
+            top_papers_citations = set(re.findall(r"\[(S\d+)\]", top_papers_body))
+            top_papers_titles = [card["title"] for card in cards if card["title"] in top_papers_body]
+            if not top_papers_body or (not top_papers_citations.intersection(source_ids) and not top_papers_titles):
+                errors.append("Top Papers section is empty.")
         if len(markdown) > 12000:
             errors.append("Bulletin exceeds maximum length.")
 
@@ -49,3 +53,10 @@ class BulletinValidationService:
             "errors": errors,
             "warnings": warnings,
         }
+
+
+def _section_body(markdown: str, section: str) -> str:
+    match = re.search(rf"(?:^|\n)##[ \t]+{re.escape(section)}[ \t]*\n(?P<body>.*?)(?=\n##[ \t]+|\Z)", markdown, re.DOTALL)
+    if not match:
+        return ""
+    return match.group("body").strip()

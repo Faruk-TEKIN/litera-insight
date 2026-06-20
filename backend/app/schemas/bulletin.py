@@ -7,7 +7,7 @@ class BulletinPreferenceRequest(BaseModel):
     selection_type: str
     cluster_ids: list[int] = Field(default_factory=list)
     categories: list[str] = Field(default_factory=list)
-    limit: int = Field(default=10, ge=1, le=50)
+    limit: int | None = Field(default=None, ge=1)
     include_digests: bool = True
     notifications_enabled: bool = True
 
@@ -28,7 +28,7 @@ class WeeksBestBulletinRequest(BaseModel):
     week_start: date
     week_end: date
     force_refresh: bool = False
-    use_llm: bool = False
+    use_llm: bool = True
 
     @model_validator(mode="after")
     def validate_weeks_best_request(self):

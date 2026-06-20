@@ -7,6 +7,7 @@ import json
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from backend.app.core.config import settings
 from backend.app.services.bulletin_candidate_service import BulletinCandidateService, parse_week_window
 from backend.app.services.bulletin_card_service import BulletinCardService
 from backend.app.services.bulletin_diversity_service import BulletinDiversityService
@@ -35,6 +36,8 @@ def weeks_best_snapshot_key(
     week_start: date,
     week_end: date,
     generation_version: str = GENERATION_VERSION,
+    use_llm: bool = True,
+    model_name: str | None = None,
 ) -> str:
     params = {
         "selection_type": selection_type,
@@ -44,6 +47,8 @@ def weeks_best_snapshot_key(
         "generation_version": generation_version,
         "prompt_version": PROMPT_VERSION,
         "scoring_version": SCORING_VERSION,
+        "generation_mode": "ollama" if use_llm else "deterministic",
+        "model_name": model_name or (settings.MODEL_NAME if use_llm else None),
     }
     digest = hashlib.sha256(json.dumps(params, sort_keys=True).encode("utf-8")).hexdigest()[:24]
     return f"{WEEKS_BEST_SCHEMA_VERSION}:{digest}"
@@ -65,12 +70,12 @@ class BulletinSnapshotService:
         week_start: date,
         week_end: date,
         force_refresh: bool = False,
-        use_llm: bool = False,
+        use_llm: bool = True,
     ) -> dict:
-        key = weeks_best_snapshot_key(selection_type, selection_id, week_start, week_end)
+        key = weeks_best_snapshot_key(selection_type, selection_id, week_start, week_end, use_llm=use_llm)
         if not force_refresh:
             snapshot = self._get_snapshot(key)
-            if snapshot:
+            if snapshot and snapshot.payload_json.get("status") != "failed":
                 return snapshot.payload_json
         return self.generate(selection_type, selection_id, week_start, week_end, use_llm=use_llm)
 
@@ -80,8 +85,9 @@ class BulletinSnapshotService:
         selection_id: str,
         week_start: date,
         week_end: date,
+        use_llm: bool = True,
     ) -> dict:
-        key = weeks_best_snapshot_key(selection_type, selection_id, week_start, week_end)
+        key = weeks_best_snapshot_key(selection_type, selection_id, week_start, week_end, use_llm=use_llm)
         snapshot = self._get_snapshot(key)
         if snapshot:
             return snapshot.payload_json
@@ -102,21 +108,22 @@ class BulletinSnapshotService:
         selection_id: str,
         week_start: date,
         week_end: date,
-        use_llm: bool = False,
+        use_llm: bool = True,
     ) -> dict:
         selection = self.candidates.resolve_selection(selection_type, selection_id, week_start, week_end)
-        key = weeks_best_snapshot_key(selection.selection_type, selection.selection_id, week_start, week_end)
+        key = weeks_best_snapshot_key(selection.selection_type, selection.selection_id, week_start, week_end, use_llm=use_llm)
         candidate_articles = self.candidates.candidates(selection)
         scored = self.scoring.score(selection, candidate_articles)
         selected = self.diversity.select(scored, top_count=5, watch_count=3)
         cards = self.cards.cards(selected)
 
         if not cards:
-            payload = self._empty_payload(selection, key)
+            payload = self._empty_payload(selection, key, use_llm=use_llm)
             self._upsert_snapshot(key, payload)
             return payload
 
-        bulletin = BulletinGenerationService(use_llm=use_llm).generate(selection, cards, top_count=5)
+        generator = BulletinGenerationService(use_llm=use_llm)
+        bulletin = generator.generate(selection, cards, top_count=5)
         validation = self.validation.validate(selection, cards, bulletin)
         status = "validated" if validation["valid"] else "failed"
         payload = {
@@ -143,8 +150,10 @@ class BulletinSnapshotService:
                 "generation_version": GENERATION_VERSION,
                 "prompt_version": PROMPT_VERSION,
                 "scoring_version": SCORING_VERSION,
-                "model_name": BulletinGenerationService(use_llm=use_llm).ollama.model if use_llm else None,
+                "model_name": generator.ollama.model if use_llm else None,
                 "use_llm": use_llm,
+                "generation_source": bulletin.get("generation_source"),
+                "llm_error": bulletin.get("llm_error"),
                 "generated_at": datetime.now(UTC).replace(tzinfo=None).isoformat(),
                 "limited_activity": len(candidate_articles) < 5,
             },
@@ -195,7 +204,7 @@ class BulletinSnapshotService:
             "categories": categories,
         }
 
-    def _empty_payload(self, selection, key: str) -> dict:
+    def _empty_payload(self, selection, key: str, use_llm: bool) -> dict:
         return {
             "schema_version": WEEKS_BEST_SCHEMA_VERSION,
             "snapshot_key": key,
@@ -220,6 +229,10 @@ class BulletinSnapshotService:
                 "generation_version": GENERATION_VERSION,
                 "prompt_version": PROMPT_VERSION,
                 "scoring_version": SCORING_VERSION,
+                "model_name": settings.MODEL_NAME if use_llm else None,
+                "use_llm": use_llm,
+                "generation_source": "empty",
+                "llm_error": None,
                 "generated_at": datetime.now(UTC).replace(tzinfo=None).isoformat(),
                 "limited_activity": True,
             },

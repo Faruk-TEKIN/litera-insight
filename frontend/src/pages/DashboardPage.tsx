@@ -106,7 +106,7 @@ interface AnalyticsPayload {
   clusterQuality?: ClusterQuality;
 }
 
-type PeriodValue = '3m' | '6m' | '12m' | 'all';
+type PeriodValue = '1m' | '3m' | '6m' | '12m' | 'all';
 
 export default function DashboardPage() {
   const navigate = useNavigate();
@@ -589,27 +589,26 @@ function FilterSelect({
 
 function PeriodControl({ value, onChange }: { value: PeriodValue; onChange: (value: PeriodValue) => void }) {
   const options: { value: PeriodValue; label: string }[] = [
-    { value: '3m', label: '3M' },
-    { value: '6m', label: '6M' },
-    { value: '12m', label: '12M' },
+    { value: '1m', label: '1 month' },
+    { value: '3m', label: '3 months' },
+    { value: '6m', label: '6 months' },
+    { value: '12m', label: '12 months' },
     { value: 'all', label: 'All' },
   ];
 
   return (
-    <div className="inline-flex h-9 rounded-md border border-[var(--border)] bg-[var(--surface-elevated)] p-1">
-      {options.map((option) => (
-        <button
-          key={option.value}
-          type="button"
-          onClick={() => onChange(option.value)}
-          className={`min-w-10 rounded px-2 text-xs font-semibold transition ${
-            value === option.value ? 'bg-[var(--text-primary)] text-[var(--canvas)]' : 'text-[var(--text-secondary)] hover:bg-[var(--surface-high)]'
-          }`}
-        >
-          {option.label}
-        </button>
-      ))}
-    </div>
+    <label className="flex h-9 items-center gap-2 rounded-md border border-[var(--border)] bg-[var(--surface-elevated)] px-2 text-xs text-[var(--text-secondary)]">
+      <span className="font-medium">Period</span>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value as PeriodValue)}
+        className="h-7 min-w-24 bg-transparent text-xs font-semibold text-[var(--text-primary)] outline-none"
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>{option.label}</option>
+        ))}
+      </select>
+    </label>
   );
 }
 

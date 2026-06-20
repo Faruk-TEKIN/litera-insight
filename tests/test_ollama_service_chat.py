@@ -49,6 +49,7 @@ class _AsyncClientStub:
         return False
 
     async def post(self, url, json):
+        await asyncio.sleep(0)
         self.calls.append(("post", url, json))
         return _SyncResponse({"message": {"content": "hello"}})
 

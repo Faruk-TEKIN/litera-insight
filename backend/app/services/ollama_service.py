@@ -39,7 +39,7 @@ class OllamaService:
             return data.get("response", "").strip()
         except requests.RequestException as exc:
             raise OllamaServiceError("Ollama servisine ulasilamadi veya yanit alinamadi.") from exc
-        except (json.JSONDecodeError, ValueError) as exc:
+        except ValueError as exc:
             raise OllamaServiceError("Ollama gecersiz JSON yaniti dondu.") from exc
 
     def chat_generate(self, messages: Sequence[dict[str, str]]) -> str:
@@ -54,7 +54,7 @@ class OllamaService:
             return str(message.get("content", "")).strip()
         except requests.RequestException as exc:
             raise OllamaServiceError("Ollama servisine ulasilamadi veya yanit alinamadi.") from exc
-        except (json.JSONDecodeError, ValueError, AttributeError) as exc:
+        except (ValueError, AttributeError) as exc:
             raise OllamaServiceError("Ollama gecersiz JSON yaniti dondu.") from exc
 
     async def generate_async(self, prompt: str) -> str:
@@ -73,7 +73,7 @@ class OllamaService:
                 return data.get("response", "").strip()
         except httpx.HTTPError as exc:
             raise OllamaServiceError("Ollama servisine ulasilamadi veya yanit alinamadi.") from exc
-        except (json.JSONDecodeError, ValueError) as exc:
+        except ValueError as exc:
             raise OllamaServiceError("Ollama gecersiz JSON yaniti dondu.") from exc
 
     async def chat_generate_async(self, messages: Sequence[dict[str, str]]) -> str:
@@ -89,7 +89,7 @@ class OllamaService:
                 return str(message.get("content", "")).strip()
         except httpx.HTTPError as exc:
             raise OllamaServiceError("Ollama servisine ulasilamadi veya yanit alinamadi.") from exc
-        except (json.JSONDecodeError, ValueError, AttributeError) as exc:
+        except (ValueError, AttributeError) as exc:
             raise OllamaServiceError("Ollama gecersiz JSON yaniti dondu.") from exc
 
     async def stream_generate(self, prompt: str) -> AsyncIterator[str]:
@@ -113,7 +113,7 @@ class OllamaService:
                             yield chunk
         except httpx.HTTPError as exc:
             raise OllamaServiceError("Ollama servisine ulasilamadi veya yanit alinamadi.") from exc
-        except (json.JSONDecodeError, ValueError) as exc:
+        except ValueError as exc:
             raise OllamaServiceError("Ollama gecersiz JSON yaniti dondu.") from exc
 
     async def stream_chat(self, messages: Sequence[dict[str, str]]) -> AsyncIterator[str]:
@@ -134,7 +134,7 @@ class OllamaService:
                             yield chunk
         except httpx.HTTPError as exc:
             raise OllamaServiceError("Ollama servisine ulasilamadi veya yanit alinamadi.") from exc
-        except (json.JSONDecodeError, ValueError, AttributeError) as exc:
+        except (ValueError, AttributeError) as exc:
             raise OllamaServiceError("Ollama gecersiz JSON yaniti dondu.") from exc
 
 

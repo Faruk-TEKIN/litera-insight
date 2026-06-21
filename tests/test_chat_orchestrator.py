@@ -11,9 +11,12 @@ from backend.app.schemas.chat import ChatRequest
 from backend.app.schemas.source import SourceReference
 from backend.app.services.chat_orchestrator import (
     ChatOrchestrator,
+    GREETING_RESPONSE_EN,
+    GREETING_RESPONSE_TR,
     REFUSAL_MESSAGE_EN,
     REFUSAL_MESSAGE_TR,
     _fixed_refusal_message,
+    _greeting_response,
     _format_sources_section,
     _has_sources_section,
 )
@@ -98,6 +101,21 @@ def test_source_section_helpers_support_publish_date_and_turkish_heading():
 def test_fixed_refusal_message_matches_user_language():
     assert _fixed_refusal_message("RAG nedir?") == REFUSAL_MESSAGE_TR
     assert _fixed_refusal_message("What is Kubernetes?") == REFUSAL_MESSAGE_EN
+
+
+@pytest.mark.parametrize("message", ["selam", "Merhaba!", "günaydın", "iyi akşamlar"])
+def test_greeting_response_matches_turkish_greetings(message):
+    assert _greeting_response(message) == GREETING_RESPONSE_TR
+
+
+@pytest.mark.parametrize("message", ["hello", "Hi!", "hey there", "good morning"])
+def test_greeting_response_matches_english_greetings(message):
+    assert _greeting_response(message) == GREETING_RESPONSE_EN
+
+
+def test_greeting_response_only_handles_standalone_greetings():
+    assert _greeting_response("selam, son RAG makalelerini göster") is None
+    assert _greeting_response("hello, find recent papers about RAG evaluation") is None
 
 
 def test_legacy_raw_chat_endpoint_is_disabled():

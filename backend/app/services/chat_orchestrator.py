@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.config import settings
 from backend.app.core.database import SessionLocal
-from backend.app.schemas.retrieval import RetrievedArticle, RouteDecision
+from backend.app.schemas.retrieval import RetrievalFilters, RetrievedArticle, RouteDecision
 from backend.app.services.conversation_memory_service import ConversationMemory, ConversationMemoryService
 from backend.app.services.ollama_service import OllamaServiceError, get_ollama_service
 from backend.app.services.rag_router_service import OUT_OF_SCOPE_REASON_PREFIX, RagRouterService
@@ -32,6 +32,16 @@ REFUSAL_MESSAGE_EN = (
     "Please ask your question with a paper, topic, category, date range, DOI, PDF, cluster, or source context."
 )
 
+GREETING_RESPONSE_TR = (
+    "Merhaba! Akademik makale arama, özetleme, karşılaştırma ve literatür araştırması konularında yardımcı olabilirim."
+)
+
+GREETING_RESPONSE_EN = (
+    "Hello! I can help with academic paper search, summarization, comparison, and literature research tasks."
+)
+
+GREETING_REASON_PREFIX = "GREETING:"
+
 
 class ChatOrchestrator:
     def __init__(self):
@@ -52,6 +62,25 @@ class ChatOrchestrator:
             try:
                 session = self._get_session(db, session_id, user_id)
                 self._save_user_message(db, session, message)
+
+                greeting_response = _greeting_response(message)
+                if greeting_response:
+                    route_decision = RouteDecision(
+                        use_rag=False,
+                        reason=f"{GREETING_REASON_PREFIX} user greeted the assistant",
+                        rewritten_query=message,
+                        filters=RetrievalFilters(),
+                        top_k=0,
+                    )
+                    full_response = greeting_response
+                    yield full_response
+                    try:
+                        self._save_assistant_message(db, session, full_response, route_decision, [])
+                        await ConversationMemoryService(db).update_summary_if_needed(session.id, self.ollama_service)
+                    except Exception:
+                        db.rollback()
+                        logger.exception("Failed to persist greeting chat response metadata")
+                    return
 
                 memory = ConversationMemoryService(db).load_memory(session_id)
                 try:
@@ -263,6 +292,35 @@ def _is_out_of_scope_decision(route_decision: RouteDecision) -> bool:
 
 def _fixed_refusal_message(message: str) -> str:
     return REFUSAL_MESSAGE_TR if _looks_turkish(message) else REFUSAL_MESSAGE_EN
+
+
+def _greeting_response(message: str) -> str | None:
+    if _is_turkish_greeting(message):
+        return GREETING_RESPONSE_TR
+    if _is_english_greeting(message):
+        return GREETING_RESPONSE_EN
+    return None
+
+
+def _is_turkish_greeting(message: str) -> bool:
+    normalized = _normalize_short_message(message)
+    return bool(
+        re.fullmatch(
+            r"(?:selam(?:lar)?|merhaba|g[üu]nayd[ıi]n|iyi\s+(?:g[üu]nler|akşamlar|aksamlar|geceler))",
+            normalized,
+        )
+    )
+
+
+def _is_english_greeting(message: str) -> bool:
+    normalized = _normalize_short_message(message)
+    return bool(re.fullmatch(r"(?:hello|hi|hey)(?:\s+there)?|good\s+(?:morning|afternoon|evening)", normalized))
+
+
+def _normalize_short_message(message: str) -> str:
+    normalized = (message or "").lower().strip()
+    normalized = re.sub(r"\s+", " ", normalized)
+    return normalized.strip(" \t\r\n.,!?;:")
 
 
 def _looks_turkish(message: str) -> bool:

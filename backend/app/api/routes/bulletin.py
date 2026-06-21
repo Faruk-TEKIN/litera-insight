@@ -1,7 +1,9 @@
 from datetime import date, datetime
 import logging
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from backend.app.api.dependencies import get_current_user
@@ -13,6 +15,7 @@ from backend.app.services.notification_service import NotificationService
 from backend.app.services.report_snapshot_service import DEFAULT_BULLETIN_LIMIT
 from backend.app.services.report_snapshot_service import ReportSnapshotService
 from backend.app.services.user_bulletin_service import USER_BULLETIN_PAPER_LIMIT, UserBulletinService
+from backend.app.services.weeks_best_pdf_service import WeeksBestPdfError, WeeksBestPdfService
 from database.models.ArticleData import Article
 from database.models.User import User
 
@@ -107,6 +110,38 @@ def generate_weeks_best_bulletin(
         db.rollback()
         logger.exception("Week's Best notification creation failed for user_id=%s", user.id)
     return bulletin
+
+
+@router.get("/bulletin/weeks-best/pdf")
+def download_weeks_best_pdf(
+    selection_type: str = Query(..., pattern="^(cluster|category)$"),
+    selection_id: str = Query(...),
+    week_start: date | None = Query(default=None, description="Hafta baslangici, YYYY-MM-DD"),
+    week_end: date | None = Query(default=None, description="Hafta bitisi, YYYY-MM-DD"),
+    use_llm: bool = Query(default=True, description="Ollama ile uretilen snapshot anahtarini kullan"),
+    db: Session = Depends(get_db),
+):
+    if week_start is None or week_end is None:
+        week_start, week_end = default_previous_week()
+    payload = BulletinSnapshotService(db).get_cached(
+        selection_type=selection_type,
+        selection_id=selection_id,
+        week_start=week_start,
+        week_end=week_end,
+        use_llm=use_llm,
+    )
+    if payload.get("status") == "not_generated":
+        raise HTTPException(status_code=404, detail="Week's Best bulletin has not been generated yet.")
+    try:
+        filename, pdf_bytes = WeeksBestPdfService().render(payload)
+    except WeeksBestPdfError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    encoded_filename = quote(filename)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"},
+    )
 
 
 @router.get("/bulletin")

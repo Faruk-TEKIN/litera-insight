@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-import re
 
 from sqlalchemy.orm import Session
 
@@ -13,6 +12,7 @@ from backend.app.services.notification_service import (
     DELIVERY_SKIPPED,
 )
 from backend.app.services.telegram_bot_service import TelegramBotService
+from backend.app.services.weeks_best_pdf_service import WeeksBestPdfService
 from database.models.Notification import Notification
 from database.models.NotificationDelivery import NotificationDelivery
 from database.models.ReportSnapshot import ReportSnapshot
@@ -65,19 +65,16 @@ class NotificationDeliveryService:
             return {"status": delivery.status}
 
         payload = snapshot.payload_json or {}
-        markdown = payload.get("full_markdown") or ""
-        if not markdown:
-            self._mark_failed_or_retry(delivery, "Week's Best markdown content is empty.")
-            return {"status": delivery.status}
-
         try:
+            filename, pdf_bytes = WeeksBestPdfService().render(payload)
             telegram = self.telegram or TelegramBotService()
             message_result = telegram.send_message(account.telegram_chat_id, self._summary_message(payload))
             document_result = telegram.send_document(
                 account.telegram_chat_id,
-                self._filename(payload),
-                markdown,
-                caption="Full Week's Best bulletin",
+                filename,
+                pdf_bytes,
+                mime_type="application/pdf",
+                caption="Full Week's Best bulletin PDF",
             )
         except Exception as exc:
             account.last_error = str(exc)
@@ -129,24 +126,9 @@ class NotificationDeliveryService:
                 f"Period: {payload.get('week_start')} - {payload.get('week_end')}",
                 f"Selected papers: {metadata.get('selected_count') or 0}",
                 "",
-                "The full bulletin is attached as Markdown.",
+                "The full bulletin is attached as a PDF.",
             ]
         )
-
-    @staticmethod
-    def _filename(payload: dict) -> str:
-        raw = "_".join(
-            [
-                "weeks_best",
-                str(payload.get("selection_type") or "topic"),
-                str(payload.get("selection_id") or "selection"),
-                str(payload.get("week_start") or "start"),
-                str(payload.get("week_end") or "end"),
-            ]
-        )
-        safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", raw).strip("_")
-        return f"{safe}.md"
-
 
 def _utcnow_naive() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)

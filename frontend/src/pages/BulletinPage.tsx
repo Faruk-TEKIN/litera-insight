@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Newspaper, Clock, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ExternalLink, Sparkles, Search, X } from 'lucide-react';
+import { Newspaper, Clock, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Download, ExternalLink, Sparkles, Search, X } from 'lucide-react';
 import { ensureOk, getBackendBaseUrl, normalizeUnknownError } from '../api/client';
 import { createTelegramLinkToken, fetchTelegramStatus, unlinkTelegram, type TelegramStatus } from '../api/telegram';
 import { clearStoredUser, getAuthHeaders } from '../lib/auth';
@@ -216,6 +216,7 @@ export default function BulletinPage() {
   const [weeksBestSelectionId, setWeeksBestSelectionId] = useState(searchParams.get('selection_id') || '');
   const [weeksBest, setWeeksBest] = useState<WeeksBestBulletin | null>(null);
   const [weeksBestLoading, setWeeksBestLoading] = useState(false);
+  const [weeksBestPdfLoading, setWeeksBestPdfLoading] = useState(false);
   const [weeksBestError, setWeeksBestError] = useState<string | null>(null);
   const [weeksBestWeekStart, setWeeksBestWeekStart] = useState(() => searchParams.get('week_start') || previousWeekRange().start);
   const [weeksBestWeekEnd, setWeeksBestWeekEnd] = useState(() => searchParams.get('week_end') || previousWeekRange().end);
@@ -473,6 +474,42 @@ export default function BulletinPage() {
     }
   };
 
+  const downloadWeeksBestPdf = async () => {
+    if (!weeksBestSelectionId) {
+      setWeeksBestError('Choose a cluster or category first.');
+      return;
+    }
+    setWeeksBestPdfLoading(true);
+    setWeeksBestError(null);
+    try {
+      const params = new URLSearchParams({
+        selection_type: weeksBestType,
+        selection_id: weeksBestSelectionId,
+        week_start: weeksBestWeekStart,
+        week_end: weeksBestWeekEnd,
+        use_llm: 'true',
+      });
+      const response = await fetch(`${backendBaseUrl}/bulletin/weeks-best/pdf?${params.toString()}`, {
+        headers: getAuthHeaders(),
+      });
+      await ensureOk(response);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `weeks_best_${weeksBestType}_${weeksBestSelectionId}_${weeksBestWeekStart}_${weeksBestWeekEnd}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Failed to download Week's Best PDF", error);
+      setWeeksBestError(normalizeUnknownError(error, "Week's Best PDF could not be downloaded.").message);
+    } finally {
+      setWeeksBestPdfLoading(false);
+    }
+  };
+
   if (loading) {
     return <LoadingState label="Loading bulletin..." />;
   }
@@ -663,6 +700,8 @@ export default function BulletinPage() {
           bulletin={weeksBest}
           error={weeksBestError}
           loading={weeksBestLoading}
+          pdfLoading={weeksBestPdfLoading}
+          onDownloadPdf={downloadWeeksBestPdf}
           onGenerate={() => generateWeeksBest(false)}
           onRefresh={() => generateWeeksBest(true)}
           onSelectionChange={(value) => {
@@ -1130,7 +1169,7 @@ function TelegramConnectionPanel() {
           <h2 className="text-sm font-semibold text-[var(--text-primary)]">Telegram notifications</h2>
           <p className="mt-1 text-xs text-[var(--text-secondary)]">
             {status?.linked
-              ? `Connected${status.telegram_username ? ` as @${status.telegram_username}` : ''}. Week's Best bulletins will be sent as Markdown documents.`
+              ? `Connected${status.telegram_username ? ` as @${status.telegram_username}` : ''}. Week's Best bulletins will be sent as PDF documents.`
               : 'Connect Telegram to receive Week\'s Best bulletins when generation completes.'}
           </p>
           {status?.last_error ? <p className="mt-1 text-xs text-amber-600">{status.last_error}</p> : null}
@@ -1185,6 +1224,8 @@ function WeeksBestPanel({
   bulletin,
   error,
   loading,
+  pdfLoading,
+  onDownloadPdf,
   onGenerate,
   onRefresh,
   onSelectionChange,
@@ -1200,6 +1241,8 @@ function WeeksBestPanel({
   bulletin: WeeksBestBulletin | null;
   error: string | null;
   loading: boolean;
+  pdfLoading: boolean;
+  onDownloadPdf: () => void;
   onGenerate: () => void;
   onRefresh: () => void;
   onSelectionChange: (value: string) => void;
@@ -1300,6 +1343,17 @@ function WeeksBestPanel({
               className="h-9 rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 text-xs font-semibold text-[var(--text-secondary)] hover:border-emerald-300 hover:text-emerald-600 disabled:opacity-50"
             >
               Refresh
+            </button>
+          ) : null}
+          {bulletin?.status === 'validated' ? (
+            <button
+              type="button"
+              onClick={onDownloadPdf}
+              disabled={loading || pdfLoading || !selectionId}
+              className="inline-flex h-9 items-center gap-1.5 rounded-md border border-emerald-500/40 bg-[var(--accent-soft)] px-3 text-xs font-semibold text-emerald-600 hover:border-emerald-400 disabled:opacity-50"
+            >
+              <Download size={13} />
+              {pdfLoading ? 'Preparing...' : 'PDF'}
             </button>
           ) : null}
         </div>

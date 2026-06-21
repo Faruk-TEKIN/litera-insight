@@ -28,9 +28,17 @@ class TelegramBotService:
             },
         )
 
-    def send_document(self, chat_id: str, filename: str, content: str, caption: str | None = None) -> dict:
-        file_obj = BytesIO(content.encode("utf-8"))
-        files = {"document": (filename, file_obj, "text/markdown")}
+    def send_document(
+        self,
+        chat_id: str,
+        filename: str,
+        content: bytes | str,
+        mime_type: str = "application/octet-stream",
+        caption: str | None = None,
+    ) -> dict:
+        content_bytes = content.encode("utf-8") if isinstance(content, str) else content
+        file_obj = BytesIO(content_bytes)
+        files = {"document": (filename, file_obj, mime_type)}
         data = {"chat_id": chat_id}
         if caption:
             data["caption"] = caption[:1024]

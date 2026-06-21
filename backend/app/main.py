@@ -6,6 +6,8 @@ from backend.app.api.routes.health import router as health_router
 from backend.app.api.routes.analytics import router as analytics_router
 from backend.app.api.routes.bulletin import router as bulletin_router
 from backend.app.api.routes.auth import router as auth_router
+from backend.app.api.routes.notifications import router as notifications_router
+from backend.app.api.routes.telegram import router as telegram_router
 
 
 app = FastAPI(
@@ -26,3 +28,5 @@ app.include_router(auth_router, tags=["auth"])
 app.include_router(chat_router, tags=["chat"])
 app.include_router(analytics_router, tags=["analytics"])
 app.include_router(bulletin_router, tags=["bulletin"])
+app.include_router(notifications_router, tags=["notifications"])
+app.include_router(telegram_router, tags=["telegram"])

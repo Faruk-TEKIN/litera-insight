@@ -1,36 +1,26 @@
 from datetime import date, datetime
+import logging
+from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
+from backend.app.api.dependencies import get_current_user
 from backend.app.core.database import get_db
 from backend.app.schemas.bulletin import BulletinPreferenceRequest, WeeksBestBulletinRequest
 from backend.app.services.digest_service import DigestService
 from backend.app.services.bulletin_snapshot_service import BulletinSnapshotService, default_previous_week
+from backend.app.services.notification_service import NotificationService
 from backend.app.services.report_snapshot_service import DEFAULT_BULLETIN_LIMIT
 from backend.app.services.report_snapshot_service import ReportSnapshotService
 from backend.app.services.user_bulletin_service import USER_BULLETIN_PAPER_LIMIT, UserBulletinService
+from backend.app.services.weeks_best_pdf_service import WeeksBestPdfError, WeeksBestPdfService
 from database.models.ArticleData import Article
 from database.models.User import User
 
 router = APIRouter()
-
-
-def get_current_user(
-    x_user_id: str | None = Header(default=None, alias="X-User-Id"),
-    db: Session = Depends(get_db),
-) -> User:
-    if not x_user_id:
-        raise HTTPException(status_code=401, detail="Missing X-User-Id header")
-    try:
-        user_id = int(x_user_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=401, detail="Invalid X-User-Id header") from exc
-
-    user = db.query(User).filter(User.id == user_id).first()
-    if user is None:
-        raise HTTPException(status_code=401, detail="User not found")
-    return user
+logger = logging.getLogger(__name__)
 
 
 @router.get("/bulletin/options")
@@ -104,14 +94,53 @@ def get_weeks_best_bulletin(
 def generate_weeks_best_bulletin(
     payload: WeeksBestBulletinRequest,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
-    return BulletinSnapshotService(db).get_or_generate(
+    bulletin = BulletinSnapshotService(db).get_or_generate(
         selection_type=payload.selection_type,
         selection_id=payload.selection_id,
         week_start=payload.week_start,
         week_end=payload.week_end,
         force_refresh=payload.force_refresh,
         use_llm=payload.use_llm,
+    )
+    try:
+        NotificationService(db).create_weeks_best_generated(user.id, bulletin)
+    except Exception:
+        db.rollback()
+        logger.exception("Week's Best notification creation failed for user_id=%s", user.id)
+    return bulletin
+
+
+@router.get("/bulletin/weeks-best/pdf")
+def download_weeks_best_pdf(
+    selection_type: str = Query(..., pattern="^(cluster|category)$"),
+    selection_id: str = Query(...),
+    week_start: date | None = Query(default=None, description="Hafta baslangici, YYYY-MM-DD"),
+    week_end: date | None = Query(default=None, description="Hafta bitisi, YYYY-MM-DD"),
+    use_llm: bool = Query(default=True, description="Ollama ile uretilen snapshot anahtarini kullan"),
+    db: Session = Depends(get_db),
+):
+    if week_start is None or week_end is None:
+        week_start, week_end = default_previous_week()
+    payload = BulletinSnapshotService(db).get_cached(
+        selection_type=selection_type,
+        selection_id=selection_id,
+        week_start=week_start,
+        week_end=week_end,
+        use_llm=use_llm,
+    )
+    if payload.get("status") == "not_generated":
+        raise HTTPException(status_code=404, detail="Week's Best bulletin has not been generated yet.")
+    try:
+        filename, pdf_bytes = WeeksBestPdfService().render(payload)
+    except WeeksBestPdfError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    encoded_filename = quote(filename)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"},
     )
 
 

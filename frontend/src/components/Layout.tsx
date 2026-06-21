@@ -4,6 +4,7 @@ import { BarChart3, LogOut, Menu, MessageSquare, Moon, Newspaper, Plus, Sun, Tra
 import { getBackendBaseUrl } from '../api/client';
 import { clearStoredUser, getAuthHeaders, getStoredUser } from '../lib/auth';
 import { ConfirmDialog } from './ui';
+import { NotificationBell } from './NotificationBell';
 
 interface ChatSession {
   id: string;
@@ -171,6 +172,8 @@ export default function Layout() {
           </NavLink>
         ))}
 
+        {user ? <NotificationBell variant="nav" /> : null}
+
         <div className="pt-4">
           <button
             type="button"
@@ -293,14 +296,17 @@ export default function Layout() {
             <Menu size={18} />
           </button>
           <span className="text-sm font-semibold">AcademicAI</span>
-          <button
-            type="button"
-            onClick={handleCreateSession}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--border)] text-[var(--text-secondary)]"
-            aria-label="New chat"
-          >
-            <Plus size={18} />
-          </button>
+          <div className="flex items-center gap-2">
+            {user ? <NotificationBell /> : null}
+            <button
+              type="button"
+              onClick={handleCreateSession}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--border)] text-[var(--text-secondary)]"
+              aria-label="New chat"
+            >
+              <Plus size={18} />
+            </button>
+          </div>
         </div>
         <div className="h-[calc(100dvh-3.5rem)] overflow-hidden md:h-dvh">
           <Outlet />

@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Newspaper, Clock, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ExternalLink, Sparkles, Search, X } from 'lucide-react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Newspaper, Clock, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Download, ExternalLink, Sparkles, Search, X } from 'lucide-react';
 import { ensureOk, getBackendBaseUrl, normalizeUnknownError } from '../api/client';
+import { createTelegramLinkToken, fetchTelegramStatus, unlinkTelegram, type TelegramStatus } from '../api/telegram';
 import { clearStoredUser, getAuthHeaders } from '../lib/auth';
 import { categoryLabel } from '../lib/categoryLabels';
 import { getImageForTopic } from '../lib/topicImages';
@@ -192,6 +193,7 @@ function normalizeBulletinGroups(data: unknown[]): BulletinGroup[] {
 
 export default function BulletinPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [groups, setGroups] = useState<BulletinGroup[]>([]);
   const [clusterOptions, setClusterOptions] = useState<Cluster[]>([]);
   const [categoryOptions, setCategoryOptions] = useState<CategoryOption[]>([]);
@@ -209,13 +211,15 @@ export default function BulletinPage() {
   const [topicSearch, setTopicSearch] = useState('');
   const [topicsOpen, setTopicsOpen] = useState(false);
   const [selectedOnly, setSelectedOnly] = useState(false);
-  const [weeksBestType, setWeeksBestType] = useState<WeeksBestSelectionType>('cluster');
-  const [weeksBestSelectionId, setWeeksBestSelectionId] = useState('');
+  const initialWeeksBestType = searchParams.get('selection_type') === 'category' ? 'category' : 'cluster';
+  const [weeksBestType, setWeeksBestType] = useState<WeeksBestSelectionType>(initialWeeksBestType);
+  const [weeksBestSelectionId, setWeeksBestSelectionId] = useState(searchParams.get('selection_id') || '');
   const [weeksBest, setWeeksBest] = useState<WeeksBestBulletin | null>(null);
   const [weeksBestLoading, setWeeksBestLoading] = useState(false);
+  const [weeksBestPdfLoading, setWeeksBestPdfLoading] = useState(false);
   const [weeksBestError, setWeeksBestError] = useState<string | null>(null);
-  const [weeksBestWeekStart, setWeeksBestWeekStart] = useState(() => previousWeekRange().start);
-  const [weeksBestWeekEnd, setWeeksBestWeekEnd] = useState(() => previousWeekRange().end);
+  const [weeksBestWeekStart, setWeeksBestWeekStart] = useState(() => searchParams.get('week_start') || previousWeekRange().start);
+  const [weeksBestWeekEnd, setWeeksBestWeekEnd] = useState(() => searchParams.get('week_end') || previousWeekRange().end);
 
   const backendBaseUrl = getBackendBaseUrl();
 
@@ -262,7 +266,14 @@ export default function BulletinPage() {
         setPreference(userBulletin.preference);
         setGroups(normalizeBulletinGroups(userBulletin.bulletin || []));
         setCurrentPageByCluster({});
-        if (userBulletin.preference) {
+        const querySelectionId = searchParams.get('selection_id');
+        const querySelectionType = searchParams.get('selection_type');
+        if (querySelectionId && (querySelectionType === 'cluster' || querySelectionType === 'category')) {
+          setWeeksBestType(querySelectionType);
+          setWeeksBestSelectionId(querySelectionId);
+          setWeeksBestWeekStart(searchParams.get('week_start') || previousWeekRange().start);
+          setWeeksBestWeekEnd(searchParams.get('week_end') || previousWeekRange().end);
+        } else if (userBulletin.preference) {
           setSelectionType(userBulletin.preference.selection_type);
           setSelectedClusterIds(new Set((userBulletin.preference.cluster_ids || []).map(String)));
           const availableCategories = new Set(categories.map((item) => item.category));
@@ -286,7 +297,41 @@ export default function BulletinPage() {
       }
     }
     fetchData();
-  }, [backendBaseUrl, navigate]);
+  }, [backendBaseUrl, navigate, searchParams]);
+
+  useEffect(() => {
+    const selectionTypeParam = searchParams.get('selection_type');
+    const selectionIdParam = searchParams.get('selection_id');
+    const weekStartParam = searchParams.get('week_start');
+    const weekEndParam = searchParams.get('week_end');
+    if (!selectionIdParam || (selectionTypeParam !== 'cluster' && selectionTypeParam !== 'category')) {
+      return;
+    }
+
+    const params = new URLSearchParams({
+      selection_type: selectionTypeParam,
+      selection_id: selectionIdParam,
+      use_llm: 'true',
+    });
+    if (weekStartParam) params.set('week_start', weekStartParam);
+    if (weekEndParam) params.set('week_end', weekEndParam);
+
+    async function fetchCachedWeeksBest() {
+      setWeeksBestLoading(true);
+      setWeeksBestError(null);
+      try {
+        const response = await fetch(`${backendBaseUrl}/bulletin/weeks-best?${params.toString()}`);
+        await ensureOk(response);
+        setWeeksBest(await response.json() as WeeksBestBulletin);
+      } catch (err) {
+        setWeeksBestError(normalizeUnknownError(err, "Week's Best bulletin could not be loaded.").message);
+      } finally {
+        setWeeksBestLoading(false);
+      }
+    }
+
+    fetchCachedWeeksBest();
+  }, [backendBaseUrl, searchParams]);
 
   const toggleCluster = (clusterId: string) => {
     setExpandedClusters((prev) => {
@@ -408,7 +453,7 @@ export default function BulletinPage() {
     try {
       const response = await fetch(`${backendBaseUrl}/bulletin/weeks-best/generate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({
           selection_type: weeksBestType,
           selection_id: weeksBestSelectionId,
@@ -420,11 +465,48 @@ export default function BulletinPage() {
       });
       await ensureOk(response);
       setWeeksBest(await response.json() as WeeksBestBulletin);
+      window.dispatchEvent(new Event('notifications-updated'));
     } catch (error) {
       console.error("Failed to generate Week's Best bulletin", error);
       setWeeksBestError(normalizeUnknownError(error, "Week's Best bulletin could not be generated.").message);
     } finally {
       setWeeksBestLoading(false);
+    }
+  };
+
+  const downloadWeeksBestPdf = async () => {
+    if (!weeksBestSelectionId) {
+      setWeeksBestError('Choose a cluster or category first.');
+      return;
+    }
+    setWeeksBestPdfLoading(true);
+    setWeeksBestError(null);
+    try {
+      const params = new URLSearchParams({
+        selection_type: weeksBestType,
+        selection_id: weeksBestSelectionId,
+        week_start: weeksBestWeekStart,
+        week_end: weeksBestWeekEnd,
+        use_llm: 'true',
+      });
+      const response = await fetch(`${backendBaseUrl}/bulletin/weeks-best/pdf?${params.toString()}`, {
+        headers: getAuthHeaders(),
+      });
+      await ensureOk(response);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `weeks_best_${weeksBestType}_${weeksBestSelectionId}_${weeksBestWeekStart}_${weeksBestWeekEnd}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Failed to download Week's Best PDF", error);
+      setWeeksBestError(normalizeUnknownError(error, "Week's Best PDF could not be downloaded.").message);
+    } finally {
+      setWeeksBestPdfLoading(false);
     }
   };
 
@@ -478,6 +560,7 @@ export default function BulletinPage() {
             toggleCategory={toggleCategory}
             toggleTopic={toggleTopic}
           />
+          <TelegramConnectionPanel />
         </div>
       </div>
     );
@@ -611,10 +694,14 @@ export default function BulletinPage() {
           toggleTopic={toggleTopic}
         />
 
+        <TelegramConnectionPanel />
+
         <WeeksBestPanel
           bulletin={weeksBest}
           error={weeksBestError}
           loading={weeksBestLoading}
+          pdfLoading={weeksBestPdfLoading}
+          onDownloadPdf={downloadWeeksBestPdf}
           onGenerate={() => generateWeeksBest(false)}
           onRefresh={() => generateWeeksBest(true)}
           onSelectionChange={(value) => {
@@ -1024,10 +1111,121 @@ function BulletinPreferencePanel({
   );
 }
 
+function TelegramConnectionPanel() {
+  const [status, setStatus] = useState<TelegramStatus | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [linkUrl, setLinkUrl] = useState<string | null>(null);
+
+  const loadStatus = async () => {
+    setLoading(true);
+    try {
+      setStatus(await fetchTelegramStatus());
+      setError(null);
+    } catch (err) {
+      setError(normalizeUnknownError(err, 'Telegram status could not be loaded.').message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadStatus();
+  }, []);
+
+  const connectTelegram = async () => {
+    setLoading(true);
+    try {
+      const token = await createTelegramLinkToken();
+      setLinkUrl(token.link_url);
+      window.open(token.link_url, '_blank', 'noopener,noreferrer');
+      window.setTimeout(() => {
+        loadStatus();
+      }, 4000);
+      setError(null);
+    } catch (err) {
+      setError(normalizeUnknownError(err, 'Telegram link could not be created.').message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const disconnectTelegram = async () => {
+    setLoading(true);
+    try {
+      await unlinkTelegram();
+      setLinkUrl(null);
+      await loadStatus();
+    } catch (err) {
+      setError(normalizeUnknownError(err, 'Telegram connection could not be removed.').message);
+      setLoading(false);
+    }
+  };
+
+  return (
+    <section className="mb-6 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-3">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h2 className="text-sm font-semibold text-[var(--text-primary)]">Telegram notifications</h2>
+          <p className="mt-1 text-xs text-[var(--text-secondary)]">
+            {status?.linked
+              ? `Connected${status.telegram_username ? ` as @${status.telegram_username}` : ''}. Week's Best bulletins will be sent as PDF documents.`
+              : 'Connect Telegram to receive Week\'s Best bulletins when generation completes.'}
+          </p>
+          {status?.last_error ? <p className="mt-1 text-xs text-amber-600">{status.last_error}</p> : null}
+          {error ? <p className="mt-1 text-xs text-rose-600">{error}</p> : null}
+          {linkUrl ? (
+            <a
+              href={linkUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 hover:underline"
+            >
+              <ExternalLink size={12} />
+              Open Telegram link
+            </a>
+          ) : null}
+        </div>
+        <div className="flex shrink-0 gap-2">
+          <button
+            type="button"
+            onClick={loadStatus}
+            disabled={loading}
+            className="h-9 rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 text-xs font-semibold text-[var(--text-secondary)] hover:bg-[var(--surface-elevated)] disabled:opacity-50"
+          >
+            Refresh
+          </button>
+          {status?.linked ? (
+            <button
+              type="button"
+              onClick={disconnectTelegram}
+              disabled={loading}
+              className="h-9 rounded-md border border-rose-300 bg-rose-50 px-3 text-xs font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-50"
+            >
+              Disconnect
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={connectTelegram}
+              disabled={loading}
+              className="h-9 rounded-md bg-emerald-500 px-3 text-xs font-semibold text-white hover:bg-emerald-600 disabled:opacity-50"
+            >
+              Connect Telegram
+            </button>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function WeeksBestPanel({
   bulletin,
   error,
   loading,
+  pdfLoading,
+  onDownloadPdf,
   onGenerate,
   onRefresh,
   onSelectionChange,
@@ -1043,6 +1241,8 @@ function WeeksBestPanel({
   bulletin: WeeksBestBulletin | null;
   error: string | null;
   loading: boolean;
+  pdfLoading: boolean;
+  onDownloadPdf: () => void;
   onGenerate: () => void;
   onRefresh: () => void;
   onSelectionChange: (value: string) => void;
@@ -1143,6 +1343,17 @@ function WeeksBestPanel({
               className="h-9 rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 text-xs font-semibold text-[var(--text-secondary)] hover:border-emerald-300 hover:text-emerald-600 disabled:opacity-50"
             >
               Refresh
+            </button>
+          ) : null}
+          {bulletin?.status === 'validated' ? (
+            <button
+              type="button"
+              onClick={onDownloadPdf}
+              disabled={loading || pdfLoading || !selectionId}
+              className="inline-flex h-9 items-center gap-1.5 rounded-md border border-emerald-500/40 bg-[var(--accent-soft)] px-3 text-xs font-semibold text-emerald-600 hover:border-emerald-400 disabled:opacity-50"
+            >
+              <Download size={13} />
+              {pdfLoading ? 'Preparing...' : 'PDF'}
             </button>
           ) : null}
         </div>

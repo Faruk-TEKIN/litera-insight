@@ -35,6 +35,13 @@ class Settings(BaseSettings):
     RAG_RERANKER_TOP_N: int = 50
     CHAT_HISTORY_LIMIT: int = 12
     CHAT_SUMMARY_TRIGGER_MESSAGES: int = 24
+    CELERY_BROKER_URL: str = "redis://localhost:6379/0"
+    CELERY_RESULT_BACKEND: str = "redis://localhost:6379/0"
+    TELEGRAM_BOT_TOKEN: str | None = None
+    TELEGRAM_BOT_USERNAME: str | None = None
+    TELEGRAM_WEBHOOK_SECRET: str | None = None
+    PUBLIC_APP_URL: str = "http://localhost:5173"
+    TELEGRAM_LINK_TOKEN_TTL_MINUTES: int = 30
 
 
 settings = Settings()

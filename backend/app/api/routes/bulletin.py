@@ -1,12 +1,15 @@
 from datetime import date, datetime
+import logging
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
+from backend.app.api.dependencies import get_current_user
 from backend.app.core.database import get_db
 from backend.app.schemas.bulletin import BulletinPreferenceRequest, WeeksBestBulletinRequest
 from backend.app.services.digest_service import DigestService
 from backend.app.services.bulletin_snapshot_service import BulletinSnapshotService, default_previous_week
+from backend.app.services.notification_service import NotificationService
 from backend.app.services.report_snapshot_service import DEFAULT_BULLETIN_LIMIT
 from backend.app.services.report_snapshot_service import ReportSnapshotService
 from backend.app.services.user_bulletin_service import USER_BULLETIN_PAPER_LIMIT, UserBulletinService
@@ -14,23 +17,7 @@ from database.models.ArticleData import Article
 from database.models.User import User
 
 router = APIRouter()
-
-
-def get_current_user(
-    x_user_id: str | None = Header(default=None, alias="X-User-Id"),
-    db: Session = Depends(get_db),
-) -> User:
-    if not x_user_id:
-        raise HTTPException(status_code=401, detail="Missing X-User-Id header")
-    try:
-        user_id = int(x_user_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=401, detail="Invalid X-User-Id header") from exc
-
-    user = db.query(User).filter(User.id == user_id).first()
-    if user is None:
-        raise HTTPException(status_code=401, detail="User not found")
-    return user
+logger = logging.getLogger(__name__)
 
 
 @router.get("/bulletin/options")
@@ -104,8 +91,9 @@ def get_weeks_best_bulletin(
 def generate_weeks_best_bulletin(
     payload: WeeksBestBulletinRequest,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
-    return BulletinSnapshotService(db).get_or_generate(
+    bulletin = BulletinSnapshotService(db).get_or_generate(
         selection_type=payload.selection_type,
         selection_id=payload.selection_id,
         week_start=payload.week_start,
@@ -113,6 +101,12 @@ def generate_weeks_best_bulletin(
         force_refresh=payload.force_refresh,
         use_llm=payload.use_llm,
     )
+    try:
+        NotificationService(db).create_weeks_best_generated(user.id, bulletin)
+    except Exception:
+        db.rollback()
+        logger.exception("Week's Best notification creation failed for user_id=%s", user.id)
+    return bulletin
 
 
 @router.get("/bulletin")

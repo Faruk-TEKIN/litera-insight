@@ -307,7 +307,6 @@ Kabul kriteri:
 2. Cluster siralamasini filtrelenmis count'a gore duzelt.
 3. Time series bucket doldurma mantigini ekle.
 4. Filtered/global cluster quality ayrimini yap.
-5. Category/source dagilim sozlesmesini sadeleştir.
+5. Category/source dagilim sozlesmesini sadelestir.
 6. UI label ve bos durum metinlerini guncelle.
 7. Contract ve regresyon testlerini genislet.
-

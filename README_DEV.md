@@ -84,6 +84,36 @@ Sadece migration uygulamak icin:
 .venv/bin/alembic -c database/alembic.ini upgrade head
 ```
 
+## Demo / Local Bootstrap
+
+Uygulama, `exports/retrieval/` altina kopyalanan iki dosyayi otomatik kullanir:
+
+- `exports/retrieval/academic_platform.dump`
+- `exports/retrieval/articles_bm25.sqlite`
+
+Uçtan uca ilk kurulum akışı:
+
+```bash
+git clone <repo-url>
+cp -r /path/to/database/* <repo-root>/exports/retrieval/
+cd <repo-root>
+docker compose up --build
+```
+
+Buradaki `/path/to/database`, `academic_platform.dump` ve `articles_bm25.sqlite` dosyalarının bulunduğu yerel klasördür.
+
+Bu akışta:
+
+- PostgreSQL ilk açılışta dump dosyasını restore eder.
+- Backend açılışta database hazır olana kadar bekler.
+- Gerekirse dump'ı backend tarafında da otomatik restore eder.
+- Ollama servisi başlar ve `MODEL_NAME` ile belirtilen model otomatik indirilir.
+- Alembic migration'ları uygular.
+- Report snapshot cache'ini yeniler.
+- Frontend, restore edilmiş PostgreSQL verisini ve mounted BM25 indeksini kullanır.
+
+Eğer sadece veriyi sıfırlamak istersen `docker compose down -v` kullanabilirsin; normal bootstrap için artık gerekmez.
+
 ## Ollama
 
 ```bash

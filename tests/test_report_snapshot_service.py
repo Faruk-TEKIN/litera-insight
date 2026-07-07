@@ -314,6 +314,98 @@ def test_weeks_best_generation_marks_deterministic_fallback(monkeypatch):
     assert "A Reliable RAG Evaluation Method" in bulletin["full_markdown"]
 
 
+def test_weeks_best_generation_falls_back_when_llm_output_fails_validation(monkeypatch):
+    class InvalidThenValidGenerator:
+        def __init__(self, use_llm: bool = True):
+            self.use_llm = use_llm
+            self.ollama = SimpleNamespace(model="gemma4:e4b")
+
+        def generate(self, selection, cards, top_count=5):
+            if self.use_llm:
+                return {
+                    "title": f"Week's Best - {selection.selection_label}",
+                    "editorial_lead": "Loose text without required sections.",
+                    "emerging_trend": "Loose text without required sections.",
+                    "why_it_matters": "Loose text without required sections.",
+                    "papers_to_watch": [],
+                    "full_markdown": "Loose text without required sections.",
+                    "generation_source": "ollama",
+                    "llm_error": None,
+                }
+
+            return {
+                "title": f"Week's Best - {selection.selection_label}",
+                "editorial_lead": "Fallback lead",
+                "emerging_trend": "Fallback trend",
+                "why_it_matters": "Fallback why it matters",
+                "papers_to_watch": [],
+                "full_markdown": "\n".join(
+                    [
+                        "# Week's Best - cs.AI",
+                        "## Editorial Lead",
+                        "Fallback [S1]",
+                        "## Top Papers",
+                        "### 1. A Reliable RAG Evaluation Method",
+                        "Fallback [S1]",
+                        "## Emerging Trend",
+                        "Fallback [S1]",
+                        "## Why It Matters",
+                        "Fallback [S1]",
+                        "## Papers to Watch",
+                        "- None",
+                        "## Sources",
+                        "[S1] A Reliable RAG Evaluation Method",
+                    ]
+                ),
+                "generation_source": "deterministic_fallback",
+                "llm_error": None,
+            }
+
+    monkeypatch.setattr(
+        "backend.app.services.bulletin_snapshot_service.BulletinGenerationService",
+        InvalidThenValidGenerator,
+    )
+
+    service = BulletinSnapshotService(db=SimpleNamespace())
+    service._get_snapshot = lambda key: None
+    service._upsert_snapshot = lambda key, payload: None
+    service.candidates = SimpleNamespace(
+        resolve_selection=lambda selection_type, selection_id, week_start, week_end: BulletinSelection(
+            selection_type=selection_type,
+            selection_id=selection_id,
+            selection_label=selection_id,
+            week_start=datetime(2026, 6, 8),
+            week_end=datetime(2026, 6, 14, 23, 59, 59),
+        ),
+        candidates=lambda selection: [SimpleNamespace(id=1)],
+    )
+    service.scoring = SimpleNamespace(score=lambda selection, articles: [SimpleNamespace(article=SimpleNamespace(id=1))])
+    service.diversity = SimpleNamespace(select=lambda scored, top_count=5, watch_count=3: scored)
+    service.cards = SimpleNamespace(
+        cards=lambda selected: [
+            {
+                "source_id": "S1",
+                "article_id": 1,
+                "title": "A Reliable RAG Evaluation Method",
+                "authors": ["Alice"],
+                "published_date": "2026-06-10",
+                "source": "arxiv",
+                "doi": "10.1000/example",
+                "pdf_url": None,
+                "url": None,
+                "one_sentence_summary": "This paper evaluates retrieval augmented generation systems with auditable evidence.",
+            }
+        ]
+    )
+
+    result = service.generate("category", "cs.AI", datetime(2026, 6, 8).date(), datetime(2026, 6, 14).date())
+
+    assert result["status"] == "validated"
+    assert result["metadata"]["generation_source"] == "deterministic_fallback"
+    assert "## Top Papers" in result["full_markdown"]
+    assert result["validation"]["valid"] is True
+
+
 def test_default_previous_week_uses_monday_to_sunday_window():
     week_start, week_end = default_previous_week(today=datetime(2026, 6, 12).date())
 

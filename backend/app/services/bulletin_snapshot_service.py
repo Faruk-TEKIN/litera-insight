@@ -125,6 +125,19 @@ class BulletinSnapshotService:
         generator = BulletinGenerationService(use_llm=use_llm)
         bulletin = generator.generate(selection, cards, top_count=5)
         validation = self.validation.validate(selection, cards, bulletin)
+        llm_error = bulletin.get("llm_error")
+        invalid_errors = list(validation["errors"])
+        if use_llm and not validation["valid"]:
+            fallback_generator = BulletinGenerationService(use_llm=False)
+            fallback_bulletin = fallback_generator.generate(selection, cards, top_count=5)
+            fallback_validation = self.validation.validate(selection, cards, fallback_bulletin)
+            if fallback_validation["valid"]:
+                bulletin = fallback_bulletin
+                validation = fallback_validation
+                llm_error = (
+                    f"LLM bulletin failed validation; deterministic fallback was used. "
+                    f"Validation errors: {', '.join(invalid_errors)}"
+                )
         status = "validated" if validation["valid"] else "failed"
         payload = {
             "schema_version": WEEKS_BEST_SCHEMA_VERSION,
@@ -153,7 +166,7 @@ class BulletinSnapshotService:
                 "model_name": generator.ollama.model if use_llm else None,
                 "use_llm": use_llm,
                 "generation_source": bulletin.get("generation_source"),
-                "llm_error": bulletin.get("llm_error"),
+                "llm_error": llm_error,
                 "generated_at": datetime.now(UTC).replace(tzinfo=None).isoformat(),
                 "limited_activity": len(candidate_articles) < 5,
             },

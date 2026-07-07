@@ -5,13 +5,13 @@ Bu dokuman, sistemde Ollama'ya giden promptlari, hangi akis tarafindan kullanild
 Varsayilan model ve servis adresi `backend/app/core/config.py` icinden okunur:
 
 - `OLLAMA_BASE_URL`: varsayilan `http://localhost:11434`
-- `MODEL_NAME`: varsayilan `gemma4:e4b`
+- `MODEL_NAME`: varsayilan Docker teslim modelinde `qwen2.5:0.5b`
 
 Ollama entegrasyon katmani `backend/app/services/ollama_service.py` dosyasindadir. Tum normal cagri tipleri `/api/generate` endpoint'ine su payload yapisini gonderir:
 
 ```json
 {
-  "model": "gemma4:e4b",
+  "model": "qwen2.5:0.5b",
   "prompt": "...",
   "stream": false
 }

@@ -36,7 +36,7 @@ Relevant files:
 - `database/alembic.ini`
 - `scripts/build_bm25_index.py`
 
-`docker compose up --build` starts Postgres, backend, and frontend, but it does not run migrations, restore a dataset, build embeddings, run clustering, generate snapshots, build the BM25 index, or pull/start the Ollama model. The README documents those as separate manual steps.
+`./setup.sh` starts the Docker-only stack, applies migrations through the backend entrypoint, and pulls/warms the configured Ollama model. `./setup.sh --seed` additionally runs the first-time demo data pipeline.
 
 For an MVP handoff, this is fragile. A reviewer can easily start the containers and see a frontend, but the main features may silently fail or show empty data because the database is not prepared.
 
@@ -367,7 +367,7 @@ Defer or hide:
 
 Before presenting the project as MVP-ready, the following should pass on a clean machine:
 
-- `docker compose up --build` or `make demo` starts all required services.
+- `./setup.sh` starts all required services.
 - Migrations apply from an empty database.
 - A sample dataset is loaded.
 - At least one article has an embedding.

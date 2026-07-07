@@ -46,55 +46,55 @@ npm run dev
 Docker Compose:
 
 ```bash
-docker compose up --build
+./setup.sh
 ```
 
 Database migrations:
 
 ```bash
-.venv/bin/alembic -c database/alembic.ini upgrade head
+docker compose run --rm --no-deps --entrypoint python backend -m alembic -c /app/database/alembic.ini upgrade head
 ```
 
 Bulk ingestion:
 
 ```bash
-.venv/bin/python run_bulk_ingest.py --max-results 10000 --sources arxiv,openalex
+docker compose run --rm --no-deps --entrypoint python backend /app/run_bulk_ingest.py --max-results 10000 --sources arxiv,openalex
 ```
 
 Kaggle arXiv ingestion:
 
 ```bash
-.venv/bin/python run_kaggle_arxiv_ingest.py --input /path/to/arxiv-metadata-oai-snapshot.json --dry-run
+docker compose run --rm --no-deps --entrypoint python backend /app/run_kaggle_arxiv_ingest.py --input /app/data/arxiv-metadata-oai-snapshot.json --dry-run
 ```
 
 Data hygiene:
 
 ```bash
-.venv/bin/python ai_engine/data_hygiene/export_clean_papers.py --output-dir exports/data_hygiene
+docker compose run --rm --no-deps --entrypoint python backend /app/ai_engine/data_hygiene/export_clean_papers.py --output-dir exports/data_hygiene
 ```
 
 Embedding generation:
 
 ```bash
-.venv/bin/python ai_engine/embeddings/embeddings_to_db.py --total-articles 3500 --batch-size 250
+docker compose run --rm --no-deps --entrypoint python backend /app/ai_engine/embeddings/embeddings_to_db.py --total-articles 3500 --batch-size 250
 ```
 
 Clustering:
 
 ```bash
-.venv/bin/python ai_engine/clustering/ClusterFunctions.py
+docker compose run --rm --no-deps --entrypoint python backend /app/ai_engine/clustering/ClusterFunctions.py
 ```
 
 BM25 sidecar index:
 
 ```bash
-.venv/bin/python scripts/build_bm25_index.py
+docker compose run --rm --no-deps --entrypoint python backend /app/scripts/build_bm25_index.py
 ```
 
 RAG golden-set evaluation:
 
 ```bash
-.venv/bin/python scripts/run_rag_golden_set_evaluation.py --golden-file evaluation/rag_golden_set_10_questions.json --mode retrieval_only --top-k 5 --force-rag
+docker compose run --rm --no-deps --entrypoint python backend /app/scripts/run_rag_golden_set_evaluation.py --golden-file evaluation/rag_golden_set_10_questions.json --mode retrieval_only --top-k 5 --force-rag
 ```
 
 ## Local Development
@@ -132,12 +132,7 @@ Environment:
 - Backend health check: `http://127.0.0.1:8000/health`.
 - Frontend default URL: `http://localhost:5173`.
 
-Ollama model setup:
-
-```bash
-ollama serve
-ollama pull gemma4:e4b
-```
+Ollama runs inside Docker Compose through the `ollama` service. The `ollama-pull` service pulls and warms the configured `MODEL_NAME`.
 
 ## Tests
 
@@ -159,7 +154,7 @@ There is no visible frontend test suite. Use `npm run build` and `npm run lint` 
 - Keep backend API changes synchronized with frontend TypeScript types and API client usage.
 - Keep database model changes synchronized with Alembic migrations.
 - Do not run `reset_database.py --yes` unless the user explicitly requests a destructive database reset.
-- Do not assume Docker Compose applies migrations; run Alembic explicitly when schema changes are involved.
+- Docker startup applies migrations through the backend entrypoint; run Alembic explicitly only for manual schema verification or one-off maintenance.
 - Treat `exports/`, BM25 indexes, model outputs, dumps, caches, and generated reports as local artifacts unless the user explicitly asks to version them.
 - Avoid committing `__pycache__`, test caches, local dumps, generated ML artifacts, or scratch files.
 - For retrieval changes, consider vector retrieval, BM25 retrieval, fusion, reranking, source formatting, and RAG prompt behavior together.
@@ -168,8 +163,8 @@ There is no visible frontend test suite. Use `npm run build` and `npm run lint` 
 ## Risk Areas
 
 - Authentication currently uses unsalted SHA-256 password hashing and trusts `X-User-Id`; it is not production-safe.
-- Docker Compose starts PostgreSQL, backend, and frontend, but not Redis or Alembic migrations.
-- Worker configuration hardcodes Redis at `localhost:6379/0`.
+- Docker Compose starts PostgreSQL, Redis, Ollama, backend, worker, beat, and frontend.
+- Worker configuration uses Redis through `redis://redis:6379/0` in Docker Compose.
 - Python dependencies are mostly unpinned, so fresh installs may drift.
 - AI dependencies are heavy and hardware-sensitive: Torch, sentence-transformers, BERTopic, UMAP, HDBSCAN, and cross-encoder reranking.
 - Hybrid retrieval depends on a SQLite BM25 sidecar index at `exports/retrieval/articles_bm25.sqlite`; missing or stale indexes can change behavior.
@@ -188,12 +183,12 @@ There is no visible frontend test suite. Use `npm run build` and `npm run lint` 
 - CI expectations and required test gates.
 - Whether generated research artifacts should remain in the repo.
 - Frontend testing strategy.
-- Required LLM/model alternatives when `gemma4:e4b` is unavailable.
+- Required LLM/model alternatives if the default Docker model is too small for a target demo.
 
 ## Useful Files
 
-- `README.md`: high-level Turkish project overview.
-- `README_DEV.md`: detailed local runbook.
+- `README.md`: high-level English delivery overview.
+- `README_DEV.md`: detailed developer runbook.
 - `.env.example`: expected configuration variables.
 - `docker-compose.yml`: local container orchestration.
 - `backend/app/main.py`: FastAPI app wiring.

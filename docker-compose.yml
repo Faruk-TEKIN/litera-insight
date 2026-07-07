@@ -60,8 +60,6 @@ services:
       - TELEGRAM_LINK_TOKEN_TTL_MINUTES=${TELEGRAM_LINK_TOKEN_TTL_MINUTES:-30}
     volumes:
       - ./exports/retrieval:/app/exports/retrieval:ro
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
         condition: service_started
@@ -84,6 +82,7 @@ services:
       - DATABASE_URL=postgresql+psycopg2://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-academic_platform}
       - OLLAMA_BASE_URL=http://ollama:11434
       - MODEL_NAME=${WORKER_MODEL_NAME:-${MODEL_NAME:-qwen2.5:0.5b}}
+      - RAG_RERANKER_ENABLED=false
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
@@ -93,8 +92,6 @@ services:
       - TELEGRAM_LINK_TOKEN_TTL_MINUTES=${TELEGRAM_LINK_TOKEN_TTL_MINUTES:-30}
     volumes:
       - ./exports/retrieval:/app/exports/retrieval:ro
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
         condition: service_started

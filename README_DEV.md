@@ -4,34 +4,19 @@ Bu dokuman proje entrypoint'lerini ve yerel gelistirme komutlarini netlestirir.
 
 ## Gereksinimler
 
-- Python 3.11+
-- Node.js 20+
-- PostgreSQL + pgvector
-- Redis
-- Ollama
+- Docker
+- Docker Compose
+- Python 3.11+ only if running local tests outside Docker
 
 ## Ortam Degiskenleri
 
 Kok dizinde `.env` dosyasi olusturun:
 
 ```bash
-DATABASE_URL="postgresql+psycopg2://postgres:postgres@localhost:5432/academic_platform"
-OLLAMA_BASE_URL="http://localhost:11434"
-MODEL_NAME="gemma4:e4b"
-EMBEDDING_MODEL_NAME="intfloat/multilingual-e5-base"
-EMBEDDING_DEVICE=auto
-EMBEDDING_ENCODE_BATCH_SIZE=64
-CLUSTERING_HARDWARE_PROFILE=auto
-CLUSTERING_THREADS=8
-CLUSTERING_LOW_MEMORY=true
-CLUSTERING_HDBSCAN_JOBS=6
-RAG_TOP_K=5
-RAG_CANDIDATE_K=25
-CHAT_HISTORY_LIMIT=12
-CHAT_SUMMARY_TRIGGER_MESSAGES=24
+cp .env.example .env
 ```
 
-Neon kullaniliyorsa `DATABASE_URL` Neon connection string olmalidir.
+Docker Compose servisleri container icinde kendi `DATABASE_URL`, `OLLAMA_BASE_URL` ve Redis adreslerini override eder.
 
 ## Python Bagimliliklari
 
@@ -59,30 +44,20 @@ conversation memory ve analytics response contract'ini kontrol eder.
 calistirmak icin:
 
 ```bash
-.venv/bin/python scripts/run_rag_golden_set_evaluation.py --golden-file evaluation/rag_golden_set_10_questions.json --mode retrieval_only --top-k 5 --force-rag
+docker compose run --rm --no-deps --entrypoint python backend /app/scripts/run_rag_golden_set_evaluation.py --golden-file evaluation/rag_golden_set_10_questions.json --mode retrieval_only --top-k 5 --force-rag
 ```
 
 Ayni golden set ile uc tan uca RAG cevabi, citation ve answer metric'lerini olcmek icin
 Ollama ve PostgreSQL ayaktayken:
 
 ```bash
-.venv/bin/python scripts/run_rag_golden_set_evaluation.py --golden-file evaluation/rag_golden_set_10_questions.json --mode rag_end_to_end --top-k 5 --force-rag --temperature 0
+docker compose run --rm --no-deps --entrypoint python backend /app/scripts/run_rag_golden_set_evaluation.py --golden-file evaluation/rag_golden_set_10_questions.json --mode rag_end_to_end --top-k 5 --force-rag --temperature 0
 ```
 
 Varsayilan cikti dizini `evaluation/runs/<run-id>` altindadir. Calisma sonunda
 `summary_results.csv`, `retrieval_metrics.json`, `citation_metrics.json`,
 `answer_review_sheet.csv`, `failure_analysis.md`, `report.md` ve `raw_outputs.jsonl`
 dosyalari uretilir.
-
-## PostgreSQL ve Migration
-
-PostgreSQL tarafinda `vector` extension gerekir.
-
-Sadece migration uygulamak icin:
-
-```bash
-.venv/bin/alembic -c database/alembic.ini upgrade head
-```
 
 ## Docker-Only Teslim Akışı
 
@@ -124,21 +99,20 @@ docker compose run --rm --no-deps --entrypoint python backend -c "from database.
 Free ve API key gerektirmeyen veri cekimini tek basina tekrar calistirmak icin:
 
 ```bash
-.venv/bin/python run_bulk_ingest.py --max-results 4000 --sources arxiv,openalex
+docker compose run --rm --no-deps --entrypoint python backend /app/run_bulk_ingest.py --max-results 4000 --sources arxiv,openalex
 ```
-
-Bu adim `Oto Kurulum Adımları` komut blogunun icinde zaten vardir; sadece veri setini yenilemek icin ayrica calistirilir.
 
 Varsayilan RAG demo profili:
 
-- `RAG_RERANKER_MODEL_NAME=cross-encoder/ms-marco-TinyBERT-L2-v2`
+- Docker tesliminde `RAG_RERANKER_ENABLED=false`
+- Reranker tekrar acilacaksa `RAG_RERANKER_MODEL_NAME=cross-encoder/ms-marco-TinyBERT-L2-v2`
 
 Opsiyonel tek seferlik embedding ve clustering adimlari:
 
 ```bash
-.venv/bin/python ai_engine/embeddings/embeddings_to_db.py --total-articles 4000 --batch-size 250
-.venv/bin/python scripts/build_bm25_index.py
-.venv/bin/python ai_engine/clustering/ClusterFunctions.py --max-articles 4000 --include-openalex
+docker compose run --rm --no-deps --entrypoint python backend /app/ai_engine/embeddings/embeddings_to_db.py --total-articles 4000 --batch-size 250
+docker compose run --rm --no-deps --entrypoint python backend /app/scripts/build_bm25_index.py
+docker compose run --rm --no-deps --entrypoint python backend /app/ai_engine/clustering/ClusterFunctions.py --max-articles 4000 --include-openalex
 ```
 
 Eger `exports/retrieval/academic_platform.dump` varsa ilk acilista restore edilmeye devam eder; artik zorunlu degildir.
@@ -202,7 +176,7 @@ http://localhost:5173
 Varsayilan kaynaklar `arxiv,openalex` ve Computer Science filtreleriyle calisir.
 
 ```bash
-.venv/bin/python run_bulk_ingest.py --max-results 10000 --sources arxiv,openalex
+docker compose run --rm --no-deps --entrypoint python backend /app/run_bulk_ingest.py --max-results 10000 --sources arxiv,openalex
 ```
 
 ArXiv ingestion kurallari:
@@ -219,8 +193,8 @@ ArXiv ingestion kurallari:
 Kaggle arXiv snapshot dosyasindan API kullanmadan import etmek icin:
 
 ```bash
-.venv/bin/python run_kaggle_arxiv_ingest.py --input /Users/eymendogru/Downloads/arxiv-metadata-oai-snapshot.json --samples-per-month 2500 --start-year 2016 --end-year 2026 --target-max-records 300000 --dry-run
-.venv/bin/python run_kaggle_arxiv_ingest.py --input /Users/eymendogru/Downloads/arxiv-metadata-oai-snapshot.json --samples-per-month 2500 --start-year 2016 --end-year 2026 --target-max-records 300000 --batch-size 1000
+docker compose run --rm --no-deps -v "$PWD/data:/data:ro" --entrypoint python backend /app/run_kaggle_arxiv_ingest.py --input /data/arxiv-metadata-oai-snapshot.json --samples-per-month 2500 --start-year 2016 --end-year 2026 --target-max-records 300000 --dry-run
+docker compose run --rm --no-deps -v "$PWD/data:/data:ro" --entrypoint python backend /app/run_kaggle_arxiv_ingest.py --input /data/arxiv-metadata-oai-snapshot.json --samples-per-month 2500 --start-year 2016 --end-year 2026 --target-max-records 300000 --batch-size 1000
 ```
 
 Bu script dosyayi satir satir okur; kayitlari mevcut `RawArticleSchema` formatina cevirir ve ayni
@@ -232,7 +206,7 @@ teorik olarak 330000 kayit eder; `--target-max-records 300000` toplam hacmi 3000
 Semantic Scholar sorgu ile calistirilmalidir:
 
 ```bash
-.venv/bin/python run_bulk_ingest.py --max-results 1000 --sources semanticscholar --query "machine learning"
+docker compose run --rm --no-deps --entrypoint python backend /app/run_bulk_ingest.py --max-results 1000 --sources semanticscholar --query "machine learning"
 ```
 
 `ai_engine/ingestion/ingestion_state.json` repo'da tutulur; ekip ayni cursor/offset bilgisinden devam edebilir.
@@ -242,7 +216,7 @@ Semantic Scholar sorgu ile calistirilmalidir:
 ArXiv CS verisini embedding ve BERTopic icin temiz CSV'lere hazirlamak:
 
 ```bash
-.venv/bin/python ai_engine/data_hygiene/export_clean_papers.py --output-dir exports/data_hygiene
+docker compose run --rm --no-deps --entrypoint python backend /app/ai_engine/data_hygiene/export_clean_papers.py --output-dir exports/data_hygiene
 ```
 
 Bu komut `clean_papers.csv`, `clean_papers_for_bertopic.csv`, `data_hygiene_metrics.csv`,
@@ -255,7 +229,7 @@ alanlarini kullanir.
 Embedding uretilmemis makaleler icin:
 
 ```bash
-.venv/bin/python ai_engine/embeddings/embeddings_to_db.py --total-articles 3500 --batch-size 250
+docker compose run --rm --no-deps --entrypoint python backend /app/ai_engine/embeddings/embeddings_to_db.py --total-articles 3500 --batch-size 250
 ```
 
 Bu script varsayilan olarak varsa `exports/data_hygiene/clean_papers.csv` ve
@@ -274,7 +248,7 @@ aksi halde `cpu` secer. MacBook M4 Pro 24 GB icin `auto` ve
 Embedding'i olan arXiv Computer Science makalelerini clusterlamak icin:
 
 ```bash
-.venv/bin/python ai_engine/clustering/ClusterFunctions.py
+docker compose run --rm --no-deps --entrypoint python backend /app/ai_engine/clustering/ClusterFunctions.py
 ```
 
 Bu komut varsayilan olarak `source='arxiv'` olan ve `primary_category` veya `categories`
@@ -290,33 +264,33 @@ bu profil CPU thread sayisini sinirlar, UMAP `low_memory` modunu acar ve HDBSCAN
 sayisini M4 Pro icin makul seviyede tutar. Aynisini CLI'dan acik vermek icin:
 
 ```bash
-.venv/bin/python ai_engine/clustering/ClusterFunctions.py --hardware-profile m4-pro-24gb --threads 8
+docker compose run --rm --no-deps --entrypoint python backend /app/ai_engine/clustering/ClusterFunctions.py --hardware-profile m4-pro-24gb --threads 8
 ```
 
 Deneme veya daha hizli calistirma icin
 limit verilebilir:
 
 ```bash
-.venv/bin/python ai_engine/clustering/ClusterFunctions.py --max-articles 3500
+docker compose run --rm --no-deps --entrypoint python backend /app/ai_engine/clustering/ClusterFunctions.py --max-articles 3500
 ```
 
 Buyuk veri setlerinde daha iri clusterlar icin minimum topic boyutu da artirilabilir:
 
 ```bash
-.venv/bin/python ai_engine/clustering/ClusterFunctions.py --min-topic-size 50
+docker compose run --rm --no-deps --entrypoint python backend /app/ai_engine/clustering/ClusterFunctions.py --min-topic-size 50
 ```
 
 Yuksek guvenli outlier atamayi kapatmak veya esigi degistirmek icin:
 
 ```bash
-.venv/bin/python ai_engine/clustering/ClusterFunctions.py --no-reassign-outliers
-.venv/bin/python ai_engine/clustering/ClusterFunctions.py --outlier-reassignment-threshold 0.90
+docker compose run --rm --no-deps --entrypoint python backend /app/ai_engine/clustering/ClusterFunctions.py --no-reassign-outliers
+docker compose run --rm --no-deps --entrypoint python backend /app/ai_engine/clustering/ClusterFunctions.py --outlier-reassignment-threshold 0.90
 ```
 
 BERTopic iyilestirme deneyi icin baseline karsilastirmasi ve CSV/model ciktilari:
 
 ```bash
-.venv/bin/python ai_engine/clustering/ClusterFunctions.py --run-experiments --output-dir exports/bertopic
+docker compose run --rm --no-deps --entrypoint python backend /app/ai_engine/clustering/ClusterFunctions.py --run-experiments --output-dir exports/bertopic
 ```
 
 Script `topic_info.csv`, `paper_topic_assignments.csv`, `topic_keywords.csv`,
@@ -325,7 +299,7 @@ Script `topic_info.csv`, `paper_topic_assignments.csv`, `topic_keywords.csv`,
 cluster tablosunu degistirmemek icin:
 
 ```bash
-.venv/bin/python ai_engine/clustering/ClusterFunctions.py --skip-database-save --run-experiments --output-dir exports/bertopic
+docker compose run --rm --no-deps --entrypoint python backend /app/ai_engine/clustering/ClusterFunctions.py --skip-database-save --run-experiments --output-dir exports/bertopic
 ```
 
 Mevcut 20.000 temiz embedding uzerindeki son denemede `--min-topic-size 5`, en buyuk
@@ -334,7 +308,7 @@ topic oranini baseline'a gore dusururken outlier oranini hedef araliga en yakin 
 OpenAlex verisini de denemeye dahil etmek icin acik opt-in kullanin:
 
 ```bash
-.venv/bin/python ai_engine/clustering/ClusterFunctions.py --include-openalex
+docker compose run --rm --no-deps --entrypoint python backend /app/ai_engine/clustering/ClusterFunctions.py --include-openalex
 ```
 
 Script varsayilan olarak temiz CSV'lerdeki `representation_text` alanini BERTopic docs
@@ -353,7 +327,7 @@ istekleri bu snapshot'i okur.
 Yeni snapshot tablosunu olusturmak icin migration uygulanmalidir:
 
 ```bash
-.venv/bin/alembic -c database/alembic.ini upgrade head
+docker compose run --rm --no-deps --entrypoint python backend -m alembic -c /app/database/alembic.ini upgrade head
 ```
 
 Normal guncelleme akisi:
@@ -375,7 +349,7 @@ curl "http://127.0.0.1:8000/bulletin?limit=10&include_digests=true&force_refresh
 Backend calismiyorken ayni yenilemeyi Python ile yapmak icin:
 
 ```bash
-.venv/bin/python -c "from database.db import SessionLocal; from backend.app.services.report_snapshot_service import ReportSnapshotService; db=SessionLocal(); print(ReportSnapshotService(db).refresh_default_snapshots()); db.close()"
+docker compose run --rm --no-deps --entrypoint python backend -c "from database.db import SessionLocal; from backend.app.services.report_snapshot_service import ReportSnapshotService; db=SessionLocal(); print(ReportSnapshotService(db).refresh_default_snapshots()); db.close()"
 ```
 
 Snapshot durumunu kontrol etmek icin:
@@ -429,32 +403,20 @@ Mevcut worker yapisi MVP seviyesindedir; chat/RAG akisi henuz Celery uzerinden c
 Tum servisleri baslat:
 
 ```bash
-docker compose up --build
-```
-
-Modeli gerekirse indir:
-
-```bash
-ollama pull gemma4:e4b
-```
-
-Migration uygula:
-
-```bash
-.venv/bin/alembic -c database/alembic.ini upgrade head
+./setup.sh
 ```
 
 Ornek RAG verisi cek:
 
 ```bash
-.venv/bin/python run_bulk_ingest.py --max-results 100 --sources arxiv --query "retrieval augmented generation"
+docker compose run --rm --no-deps --entrypoint python backend /app/run_bulk_ingest.py --max-results 100 --sources arxiv --query "retrieval augmented generation"
 ```
 
 Embedding ve clustering:
 
 ```bash
-.venv/bin/python ai_engine/embeddings/embeddings_to_db.py --total-articles 100 --batch-size 50
-.venv/bin/python ai_engine/clustering/ClusterFunctions.py --max-articles 100
+docker compose run --rm --no-deps --entrypoint python backend /app/ai_engine/embeddings/embeddings_to_db.py --total-articles 100 --batch-size 50
+docker compose run --rm --no-deps --entrypoint python backend /app/ai_engine/clustering/ClusterFunctions.py --max-articles 100
 ```
 
 Endpoint kontrolleri:

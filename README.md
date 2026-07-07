@@ -1,220 +1,202 @@
-# Akademik Yayın İstihbarat ve Analiz Platformu (YTU-CE-Bitirme-Calismasi)
+# Academic Literature Intelligence and Analysis Platform
 
-Bu proje, akademik literatürü otomatik olarak toplamak, temizlemek, yapay zekâ yöntemleriyle gruplamak (clustering), trend analizleri çıkarmak ve RAG (Retrieval-Augmented Generation) destekli akıllı bir soru-cevap asistanı aracılığıyla araştırmacılara sunmak amacıyla geliştirilmiş uçtan uca bir akademik araştırma ve analiz platformudur.
+## TL;DR
+
+Academic literature grows faster than researchers can manually follow. This platform helps researchers, students, and research teams turn large paper collections into searchable, clustered, and source-grounded knowledge.
+
+The system combines paper ingestion, semantic retrieval, topic clustering, weekly bulletins, and an AI-assisted Chat experience in one workflow. The chat assistant is designed to answer through RAG over recently ingested academic papers, so responses can be grounded in the local corpus instead of relying on generic model memory.
+
+Primary use cases:
+
+- Literature discovery for students, researchers, and academic project teams.
+- Source-grounded question answering over newly collected papers.
+- Tracking recent papers, topic clusters, and emerging research directions.
+- Generating weekly research briefings from selected categories or clusters.
+- Comparing methods, contributions, limitations, and representative papers with citations.
+
+The main value is practical research acceleration: faster literature discovery, clearer topic-level understanding, auditable AI-assisted answers, and repeatable weekly research briefings.
 
 ---
 
-## 1. Projenin Amacı ve Çözdüğü Sorunlar
+## Problem And Our Solution
 
-Akademik dünyada her gün binlerce yeni makale yayınlanmaktadır. Araştırmacıların kendi ilgi alanlarındaki literatürü güncel olarak takip etmesi, trendleri yakalaması ve binlerce makale arasından aradığı spesifik bilgilere ulaşması ciddi bir zaman maliyetidir. 
+### Problem
 
-Bu platform:
-* **Dağınık Kaynakları Bir Araya Getirir:** ArXiv, OpenAlex ve Semantic Scholar gibi farklı servislerdeki yayınları filtreleyerek tek bir veritabanında toplar.
-* **Akıllı Gruplama (Topic Clustering) Yapar:** Gelişmiş dil modelleri ve BERTopic algoritması kullanarak makaleleri soyut metinleri (abstract) üzerinden otomatik olarak tematik kümelere (topic) ayırır.
-* **Haftalık Özet ve Trend Raporları Üretir:** Küme bazlı literatür özetleri oluşturarak en çok atıf alan veya öne çıkan çalışmaları belirler.
-* **RAG Tabanlı Soru-Cevap Desteği Sağlar:** Kullanıcıların sistemdeki makaleler hakkında sorular sormasına izin verir. LLM, veritabanındaki makalelerin metinlerini kaynak göstererek (`[S1]`, `[S2]`) yanıtlar hazırlar ve halüsinasyon riskini en aza indirir.
+Researchers regularly face three practical issues:
+
+- Academic papers are spread across multiple sources such as arXiv and OpenAlex.
+- Tracking recent developments, topic shifts, and representative papers is time-consuming.
+- Generic chat systems can answer quickly, but they do not reliably ground claims in a local academic corpus.
+
+### Our Solution
+
+This platform addresses those issues with a single local workflow:
+
+- It ingests academic papers into a structured PostgreSQL database.
+- It computes embeddings and supports hybrid retrieval with vector search and BM25.
+- It clusters papers into coherent topics for higher-level exploration.
+- It provides an AI-assisted Chat interface that uses RAG to answer over current local papers and cites its sources.
+- It generates validated weekly bulletins and cluster digests for faster literature review.
 
 ---
 
-## 2. Temel Mimari ve Teknik Altyapı
+## Technology Stack
 
-Platform, modern ve performanslı teknolojiler üzerine inşa edilmiştir:
+<p align="left">
+  <img alt="Python" src="https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white" />
+  <img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white" />
+  <img alt="PostgreSQL" src="https://img.shields.io/badge/PostgreSQL-4169E1?style=for-the-badge&logo=postgresql&logoColor=white" />
+  <img alt="pgvector" src="https://img.shields.io/badge/pgvector-0F172A?style=for-the-badge&logo=postgresql&logoColor=white" />
+  <img alt="Ollama" src="https://img.shields.io/badge/Ollama-111111?style=for-the-badge&logo=ollama&logoColor=white" />
+  <img alt="Sentence Transformers" src="https://img.shields.io/badge/SentenceTransformers-FF6F00?style=for-the-badge&logo=huggingface&logoColor=white" />
+  <img alt="BERTopic" src="https://img.shields.io/badge/BERTopic-1F2937?style=for-the-badge&logo=scikitlearn&logoColor=F7931E" />
+  <img alt="React" src="https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB" />
+  <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white" />
+  <img alt="Vite" src="https://img.shields.io/badge/Vite-646CFF?style=for-the-badge&logo=vite&logoColor=white" />
+  <img alt="Tailwind CSS" src="https://img.shields.io/badge/Tailwind_CSS-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white" />
+  <img alt="Docker" src="https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white" />
+  <img alt="Pytest" src="https://img.shields.io/badge/Pytest-0A9EDC?style=for-the-badge&logo=pytest&logoColor=white" />
+</p>
+
+### What Each Technology Does
+
+- `FastAPI`: backend API, chat endpoints, analytics, bulletin routes, health endpoints.
+- `PostgreSQL + pgvector`: paper storage, metadata filtering, vector similarity retrieval.
+- `Ollama`: local LLM runtime for routing, grounded answering, digests, and bulletin writing.
+- `sentence-transformers`: embedding generation for documents and queries.
+- `BERTopic + UMAP + HDBSCAN`: topic clustering and representative topic analysis.
+- `SQLite FTS5 BM25`: lexical sidecar index for hybrid retrieval.
+- `React + TypeScript + Vite`: frontend chat and dashboard experience.
+- `Docker Compose`: reproducible local delivery and demo environment.
+
+---
+
+## Architecture
 
 ```mermaid
 graph TD
-    A[Akademik Kaynaklar: ArXiv, OpenAlex, Semantic Scholar] -->|Ingestion Scripts| B[(PostgreSQL + pgvector)]
-    B -->|Data Hygiene| C[Temizlenmiş Veri Seti - exports/]
-    C -->|Embeddings Generation| D[Cümle Embeddingleri - Multilingual E5]
-    D -->|BERTopic Clustering| E[Konu Kümeleri ve Metadataları]
-    E -->|Snapshot Service| F[Cached Reports/Analytics Snapshot]
-    F -->|REST API - FastAPI| G[React Frontend - Vite/TS/Tailwind]
-    G -->|Interactive Chat / RAG| H[Chat Orchestrator]
-    H -->|Local LLM - Ollama Gemma 4| I[Kullanıcı Yanıtı ve Kaynak Gösterimi]
-```
-
-### Teknoloji Yığını (Tech Stack)
-* **Frontend:** React, Vite, TypeScript, Tailwind CSS, Recharts (Grafikler).
-* **Backend:** FastAPI (Python), Uvicorn.
-* **Veritabanı & Vektör Arama:** PostgreSQL + `pgvector` eklentisi.
-* **Yapay Zekâ & NLP:**
-  * **Cümle Embeddingleri:** `sentence-transformers` kütüphanesi ve `intfloat/multilingual-e5-base` modeli.
-  * **Gruplama:** BERTopic (UMAP boyut indirgeme + HDBSCAN kümeleme + c-TF-IDF kelime çıkarma).
-  * **Dil Modeli:** Yerel Ollama sunucusu üzerinde çalışan `gemma4:e4b` (veya uyumlu alternatif modeller).
-* **Veri Tabanı Göçleri (Database Migrations):** Alembic.
-* **Konteynerleştirme:** Docker & Docker Compose.
-
----
-
-## 3. Temel Pipeline Adımları (AI Engine)
-
-Sistemdeki veri akışı aşamalı bir boru hattı (pipeline) yapısıyla çalışmaktadır:
-
-1. **Veri Toplama (Ingestion):** 
-   * [run_bulk_ingest.py](file:///Users/eymendogru/Desktop/academic-platform/YTU-CE-Bitirme-Calismasi/run_bulk_ingest.py) ve [run_kaggle_arxiv_ingest.py](file:///Users/eymendogru/Desktop/academic-platform/YTU-CE-Bitirme-Calismasi/run_kaggle_arxiv_ingest.py) scriptleri ile arXiv (özellikle Computer Science `cs.*` kategorisi), OpenAlex ve Semantic Scholar servislerinden yayınlar çekilir.
-   * API hız limitlerine (rate limit) uygun olarak kuyruklama ve kaldığı yerden devam edebilme (state checkpoint) özellikleri barındırır.
-2. **Veri Hijyeni ve Hazırlığı (Data Hygiene):** 
-   * [export_clean_papers.py](file:///Users/eymendogru/Desktop/academic-platform/YTU-CE-Bitirme-Calismasi/ai_engine/data_hygiene/export_clean_papers.py) scripti ile boş veya çok kısa başlık/özet içeren hatalı kayıtlar temizlenir, dublike yayınlar elenir, dil tespiti yapılır ve derleme (survey/review) makaleleri etiketlenir.
-3. **Embedding Üretimi:** 
-   * [embeddings_to_db.py](file:///Users/eymendogru/Desktop/academic-platform/YTU-CE-Bitirme-Calismasi/ai_engine/embeddings/embeddings_to_db.py) scripti ile makale başlığı, özeti ve temel metadataları birleştirilerek vektör temsilcileri üretilir. Hash tabanlı kontrol mekanizması sayesinde metni değişmeyen veya daha önce embedding'i oluşturulmuş makaleler tekrar hesaplanmaz, sistem kaynakları korunur.
-4. **Gruplama ve Konu Çıkarımı (Clustering & BERTopic):** 
-   * [ClusterFunctions.py](file:///Users/eymendogru/Desktop/academic-platform/YTU-CE-Bitirme-Calismasi/ai_engine/clustering/ClusterFunctions.py) scripti ile makaleler anlamsal olarak gruplanır.
-   * Her küme için en belirgin anahtar kelimeler ve temsilci makaleler (representative papers) seçilir.
-   * Güven skoru yüksek olan dışta kalan makaleler (outliers) en yakın küme merkezine (centroid) cosine benzerliği ile otomatik atanır.
-
----
-
-## 4. Akıllı RAG Soru-Cevap Akışı (Retrieval-Augmented Generation)
-
-Chat modülü sıradan bir sohbet robotunun ötesinde, dinamik yönlendirme ve veritabanı filtreleme yeteneğine sahiptir:
-
-1. **İstek Yönlendirme (Routing & Query Rewriting):** 
-   * Kullanıcı sorusu geldiğinde, [rag_router_service.py](file:///Users/eymendogru/Desktop/academic-platform/YTU-CE-Bitirme-Calismasi/backend/app/services/rag_router_service.py) aracılığıyla dil modeline bir yönlendirme çağrısı yapılır.
-   * LLM, sorunun yerel veritabanında arama gerektirip gerektirmediğine karar verir.
-   * Arama gerekiyorsa, sorguyu optimize ederek yeniden yazar (`rewritten_query`) ve sorudan tarih, kaynak, kategori (örneğin: `cs.AI`), atıf sayısı, DOI ve PDF linki gibi filtreleri çıkarır.
-2. **Vektör ve Metaveri Filtreleme (Retrieval):** 
-   * [retrieval_service.py](file:///Users/eymendogru/Desktop/academic-platform/YTU-CE-Bitirme-Calismasi/backend/app/services/retrieval_service.py) üzerinden, çıkarılan filtreler SQL düzeyinde uygulanarak veritabanındaki `pgvector` sütununda semantik arama gerçekleştirilir.
-   * Tarihsel güncellik ve atıf sayısı gibi faktörlere göre Python tarafında hafif bir yeniden sıralama (re-ranking) yapılır.
-3. **Bellek Yönetimi (Conversation Memory):** 
-   * [conversation_memory_service.py](file:///Users/eymendogru/Desktop/academic-platform/YTU-CE-Bitirme-Calismasi/backend/app/services/conversation_memory_service.py) ile oturum bazlı geçmiş yönetilir.
-   * "Önceki cevaptaki ikinci makaleyi özetle" veya "bunlardan PDF'i olanları listele" gibi takip sorularında, geçmişte cited edilmiş makaleler ve filtreler hafızada tutulur.
-4. **Orkestrasyon ve Cevap Üretimi (Chat Orchestration):** 
-   * [chat_orchestrator.py](file:///Users/eymendogru/Desktop/academic-platform/YTU-CE-Bitirme-Calismasi/backend/app/services/chat_orchestrator.py) tüm akışı yöneterek dil modeline bağlamı, geçmişi ve arama sonuçlarını iletir.
-   * Yanıt içinde kaynaklar `[S1]`, `[S2]` şeklinde kesin olarak belirtilir ve mesajın altına tıklanabilir makale bağlantıları eklenir.
-
----
-
-## 5. Proje Dizin Yapısı
-
-Proje dosyaları mantıksal olarak katmanlara ayrılmıştır:
-
-```text
-├── ai_engine/                         # Yapay Zekâ ve Veri İşleme Hattı (AI Pipeline)
-│   ├── clustering/                    # BERTopic gruplama kodları ve deney araçları
-│   │   └── ClusterFunctions.py        # Kümeleme çalıştıran ana script
-│   ├── data_hygiene/                  # Veri temizleme ve hazırlık katmanı
-│   │   └── export_clean_papers.py     # Veri temizleme scripti
-│   ├── embeddings/                    # Cümle embedding üretimi
-│   │   ├── embeddings_to_db.py        # Vektörleri DB'ye yazan script
-│   │   └── model.py                   # Embedding model wrapper'ı
-│   └── ingestion/                     # API veri çekiciler (Extractors)
-│       ├── extractors/                # arXiv, OpenAlex, Semantic Scholar entegrasyonları
-│       └── loader.py                  # Çekilen veriyi DB şemasına dönüştürüp yazan yükleyici
-├── backend/                           # FastAPI Sunucusu
-│   └── app/
-│       ├── api/                       # API Endpoint Tanımları (Chat, Analytics, Bulletin, Auth)
-│       ├── core/                      # Uygulama Konfigürasyonu (.env okuma)
-│       ├── models/                    # SQLAlchemy modelleri (Veritabanı tabloları)
-│       ├── schemas/                   # Pydantic şemaları (Veri doğrulama)
-│       ├── services/                  # İş Mantığı Katmanı (Orchestrator, RAG, Memory, Snapshot)
-│       └── worker/                    # Arka plan işleri (Celery & Redis kurulumları)
-├── database/                          # Veritabanı Şeması ve Göçleri
-│   ├── alembic/                       # Veritabanı şema göç versiyonları
-│   ├── alembic.ini                    # Alembic ayarları
-│   └── db.py                          # PostgreSQL bağlantı yöneticisi
-├── docs/                              # Sistem Dokümantasyonları
-├── evaluation/                        # RAG ve Kümeleme metrik değerlendirme araçları
-├── exports/                           # Pipeline çıktılarının (raporlar, temiz CSV'ler) tutulduğu dizin
-├── frontend/                          # Vite + React + TypeScript Arayüzü
-│   ├── src/
-│   │   ├── components/                # Layout, Sidebar, AuthGuard vb. ortak bileşenler
-│   │   ├── pages/                     # Dashboard, Chat, Bulletin, Auth sayfaları
-│   │   └── lib/                       # API bağlantı ve tip tanımlamaları
-│   └── package.json
-├── tests/                             # Unit ve Integration Testleri
-│   ├── test_ai_pipeline.py            # AI pipeline testi
-│   ├── test_rag_router.py             # RAG yönlendirici testi
-│   ├── test_retrieval_service.py      # Vektör arama testi
-│   └── test_conversation_memory.py    # Sohbet hafıza testi
-├── docker-compose.yml                 # Docker orkestrasyon dosyası
-├── requirements.txt                   # Genel Python bağımlılıkları
-└── reset_database.py                  # Veritabanı sıfırlama aracı
+    A[Academic Sources: arXiv, OpenAlex, Semantic Scholar] -->|Ingestion Scripts| B[(PostgreSQL + pgvector)]
+    B -->|Data Hygiene| C[Cleaned Dataset - exports/]
+    C -->|Embeddings| D[Sentence Embeddings - multilingual E5]
+    D -->|Clustering| E[Topic Clusters and Metadata]
+    E -->|Snapshot Service| F[Cached Reports and Analytics]
+    F -->|REST API - FastAPI| G[React Frontend - Vite / TS / Tailwind]
+    G -->|Chat / RAG| H[Chat Orchestrator]
+    H -->|Local LLM - Ollama| I[Grounded Answer + Citations]
 ```
 
 ---
 
-## 6. Veri Modeli İlişkileri (Database Schema)
+## Auto Setup
 
-Sistem ilişkisel ve vektörel veriyi PostgreSQL üzerinde şu temel modellerle yönetir:
+The recommended delivery path is Docker-only.
 
-* **[ArticleData.py](file:///Users/eymendogru/Desktop/academic-platform/YTU-CE-Bitirme-Calismasi/database/models/ArticleData.py) (`articles`):** Makale metadataları (başlık, özet, yazar, doi, kaynak) ve vektör embedding'i (`embedding` - pgvector).
-* **[ClusterData.py](file:///Users/eymendogru/Desktop/academic-platform/YTU-CE-Bitirme-Calismasi/database/models/ClusterData.py) (`clusters`):** Küme bilgileri (küme numarası, atanan anahtar kelimeler, temsilci makale ID'leri, kaynak dağılımları).
-* **[ClusterDigest.py](file:///Users/eymendogru/Desktop/academic-platform/YTU-CE-Bitirme-Calismasi/database/models/ClusterDigest.py) (`cluster_digests`):** LLM tarafından üretilen küme özetleri ve öne çıkan başlıklar (cache yapısı).
-* **[ChatSession.py](file:///Users/eymendogru/Desktop/academic-platform/YTU-CE-Bitirme-Calismasi/database/models/ChatSession.py) (`chat_sessions`):** Kullanıcı sohbet oturumları, oturum başlıkları ve LLM tarafından güncellenen sohbet özetleri (session summaries).
-* **[ChatMessage.py](file:///Users/eymendogru/Desktop/academic-platform/YTU-CE-Bitirme-Calismasi/database/models/ChatMessage.py) (`chat_messages`):** Sohbet mesajları, rolü (user/assistant) ve asistan mesajları için yönlendirme kararlarını, cited edilen kaynak ID'lerini saklayan `metadata_json`.
-* **[ReportSnapshot.py](file:///Users/eymendogru/Desktop/academic-platform/YTU-CE-Bitirme-Calismasi/database/models/ReportSnapshot.py) (`report_snapshots`):** Performans optimizasyonu amacıyla önceden hesaplanmış dashboard istatistiklerini ve bulletin yayınlarını önbellekte (cache) tutar.
-
----
-
-## 7. Docker-Only Kurulum
-
-Teslim ve çalışma için önerilen tek akış Docker Compose'tur. Model dahil tüm servisler konteyner içinde ayağa kalkar.
+### Standard Startup
 
 ```bash
 cp .env.example .env
 ./setup.sh
 ```
 
-İlk açılışta `ollama-pull` servisi modeli indirir ve ısıtır. Backend migration'ları otomatik uygular, `postgres` ve `redis` servislerini kullanır, frontend ise `5173` üzerinde açılır.
+This will:
 
-Durumu doğrulamak için:
+- start PostgreSQL, Redis, Ollama, backend, worker, beat, and frontend,
+- wait until the backend becomes ready,
+- pull and warm the configured Ollama model,
+- apply migrations automatically during backend startup.
 
-```bash
-curl http://127.0.0.1:8000/health
-curl http://127.0.0.1:8000/health/ready
-docker compose logs -f ollama-pull backend frontend
-```
+### First-Time Demo Bootstrap
 
-Varsayılan çalışma modeli `MODEL_NAME=qwen2.5:0.5b` değeridir. Docker tesliminde reranker kapalı gelir; bu, ilk yanıtı hızlandırmak için bilerek yapılmıştır.
-
-İlk kurulumda demo verisini de yüklemek isterseniz:
+If you want the project to start with data and prebuilt retrieval artifacts:
 
 ```bash
 ./setup.sh --seed
 ```
 
-`--seed` akışı şu bir defalık adımları container içinde çalıştırır:
+This runs the initial data bootstrap inside Docker and covers:
 
-- `run_bulk_ingest.py`
-- `embeddings_to_db.py`
-- `build_bm25_index.py`
-- `ClusterFunctions.py`
-- `ReportSnapshotService.refresh_default_snapshots()`
+- ingestion,
+- embeddings,
+- BM25 index generation,
+- clustering,
+- snapshot refresh.
 
-Sonradan veri yenilemek veya pipeline adımlarını tek tek çalıştırmak için aynı container tabanlı komutlar şunlardır:
+---
+
+## Data Operations After Installation
+
+After the system is already installed, data-related operations can be run explicitly with Docker commands.
+
+### 1. Ingest Or Refresh Papers
 
 ```bash
 docker compose run --rm --no-deps --entrypoint python backend /app/run_bulk_ingest.py --max-results 4000 --sources arxiv,openalex
+```
+
+### 2. Generate Or Refresh Embeddings
+
+```bash
 docker compose run --rm --no-deps --entrypoint python backend /app/ai_engine/embeddings/embeddings_to_db.py --total-articles 4000 --batch-size 250
+```
+
+### 3. Rebuild The BM25 Index
+
+```bash
 docker compose run --rm --no-deps --entrypoint python backend /app/scripts/build_bm25_index.py
+```
+
+### 4. Recompute Topic Clusters
+
+```bash
 docker compose run --rm --no-deps --entrypoint python backend /app/ai_engine/clustering/ClusterFunctions.py --max-articles 4000 --include-openalex
+```
+
+### 5. Refresh Cached Snapshots
+
+```bash
 docker compose run --rm --no-deps --entrypoint python backend -c "from database.db import SessionLocal; from backend.app.services.report_snapshot_service import ReportSnapshotService; db=SessionLocal(); print(ReportSnapshotService(db).refresh_default_snapshots()); db.close()"
 ```
 
-Testleri çalıştırmak için:
+### Recommended Order
+
+When the dataset changes, use this order:
+
+1. Ingestion
+2. Embeddings
+3. BM25 index rebuild
+4. Clustering
+5. Snapshot refresh
+
+---
+
+## RAG And Bulletin Notes
+
+### RAG
+
+- Retrieval uses hybrid search: vector retrieval + BM25.
+- Docker delivery disables the reranker by default for faster first-response latency.
+- Source formatting is stabilized at the backend level.
+
+### Week's Best Bulletin
+
+- Bulletins are validated before being accepted.
+- Required sections are enforced.
+- Source citations must match selected papers.
+- If LLM output fails validation, the system falls back to deterministic bulletin generation.
+
+---
+
+## Tests
 
 ```bash
-.venv/bin/pytest tests
+docker compose run --rm --no-deps --entrypoint pytest backend tests
 ```
 
 ---
 
-## 8. Nesnel (Unsupervised/Internal) Değerlendirme Metrikleri
+## Additional Documentation
 
-BERTopic etiketlenmemiş veriyle çalıştığı için elimizde bir "ground truth" (kesin doğru etiketler) bulunmamaktadır. Bu nedenle kümeleme (clustering) kalitesi matematiksel metriklerle ölçülmektedir:
-
-### 1. Topic Coherence (Metin Tutarlılığı - $c_v$ veya $u_{mass}$)
-* **Nedir:** Kümeye atanan en baskın kelimelerin (c-TF-IDF çıktılarının) makale özetlerinde bir arada geçme sıklığını ölçer. Skor 1'e ne kadar yakınsa, o küme o kadar anlamlıdır.
-* **Kullanımı:** Konuların anlamsal bütünlüğünü ve insanlar tarafından anlaşılabilirliğini (human interpretability) doğrulamak için kritik bir metriktir.
-
-### 2. Silhouette Score ve Davies-Bouldin Index
-* **Silhouette Score:** Makalelerin kendi küme merkezlerine yakınlığını ve diğer küme merkezlerinden uzaklığını ölçer. Cosine distance/similarity baz alınarak hesaplanır.
-* **Davies-Bouldin Index:** Kümelerin kendi içindeki sıkışıklığı (tightness) ve kümeler arası ayrışımı (separation) oranlar. Düşük değerler daha iyi kümelenmeye işaret eder.
-
-> [!NOTE]
-> **Skeptik Soru:** Silhouette skorunu Multilingual E5 embedding'leri üzerinden mi hesaplamalıyız, yoksa UMAP ile indirgenmiş uzayda mı?
-> 
-> **Cevap:** Platformumuzda Silhouette skoru **orijinal yüksek boyutlu embedding uzayında (768-boyutlu E5 uzayı)** hesaplanmaktadır. UMAP doğrusal olmayan (non-linear) bir bükme yaptığı için indirgenmiş uzaydaki mesafeler gerçek anlamsal mesafeleri yanıltabilir. Orijinal uzayda hesaplama yapmak çok daha gerçekçi ve güvenilir sonuçlar üretir.
-
----
-
-Bu mimari sayesinde platform, yüksek arama doğruluğu (RAG yönlendirmesi ve SQL filtreleme), hızlı arayüz yüklenmesi (cached snapshots) ve otomatik akademik konu takibi sunarak araştırmacılar için verimli bir istihbarat aracı haline gelmektedir.
+- [Developer runbook](README_DEV.md)
+- [Docker bootstrap guide](docs/LOCAL_BOOTSTRAP.md)
+- [System details](docs/SYSTEM_WORKING_DETAILS.md)
+- [Ollama prompts](docs/OLLAMA_PROMPTS.md)

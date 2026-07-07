@@ -109,7 +109,12 @@ Key settings:
 `docker-compose.yml` defines:
 
 - `postgres`: `pgvector/pgvector:pg16`.
+- `redis`: Redis broker/result backend for Celery services.
 - `backend`: FastAPI container, exposes port `8000`, mounts `exports/retrieval` read-only for BM25.
+- `worker`: Celery worker container.
+- `beat`: Celery beat scheduler container.
+- `ollama`: local LLM runtime container.
+- `ollama-pull`: one-shot model pull and warm-up container.
 - `frontend`: Vite app, exposes port `5173`.
 
 Ollama is containerized in the main compose file. The backend and worker reach it through the in-network `ollama` service when running in Docker.
@@ -824,32 +829,26 @@ The `tests/` directory covers important contracts:
 A typical local data build should happen in this order:
 
 ```bash
-# 1. Start PostgreSQL, backend, frontend
-docker compose up --build
+# 1. Start PostgreSQL, Redis, Ollama, backend, worker, beat, and frontend
+./setup.sh
 
-# 2. Apply schema migrations
-.venv/bin/python -m alembic -c database/alembic.ini upgrade head
+# 2. Ingest papers
+docker compose run --rm --no-deps --entrypoint python backend /app/run_bulk_ingest.py --sources arxiv,openalex --max-results 1000
 
-# 3. Make sure Ollama has the configured model
-ollama pull gemma4:e4b
+# 3. Export clean paper text, optional
+docker compose run --rm --no-deps --entrypoint python backend /app/ai_engine/data_hygiene/export_clean_papers.py --include-all-sources
 
-# 4. Ingest papers
-.venv/bin/python run_bulk_ingest.py --sources arxiv,openalex --max-results 1000
+# 4. Generate embeddings
+docker compose run --rm --no-deps --entrypoint python backend /app/ai_engine/embeddings/embeddings_to_db.py --total-articles 1000 --batch-size 100
 
-# 5. Export clean paper text
-.venv/bin/python ai_engine/data_hygiene/export_clean_papers.py --include-all-sources
+# 5. Build BM25 index for hybrid retrieval
+docker compose run --rm --no-deps --entrypoint python backend /app/scripts/build_bm25_index.py
 
-# 6. Generate embeddings
-.venv/bin/python ai_engine/embeddings/embeddings_to_db.py --total-articles 1000 --batch-size 100
+# 6. Cluster embedded papers
+docker compose run --rm --no-deps --entrypoint python backend /app/ai_engine/clustering/ClusterFunctions.py --max-articles 1000 --min-topic-size 20
 
-# 7. Build BM25 index for hybrid retrieval
-.venv/bin/python scripts/build_bm25_index.py
-
-# 8. Cluster embedded papers
-.venv/bin/python ai_engine/clustering/ClusterFunctions.py --max-articles 1000 --min-topic-size 20
-
-# 9. Run tests
-.venv/bin/pytest tests
+# 7. Run tests through the backend image
+docker compose run --rm --no-deps --entrypoint pytest backend tests
 ```
 
 The exact article counts and clustering parameters should be adjusted for the available dataset size and hardware.
@@ -880,7 +879,7 @@ These points matter when maintaining or extending the project:
 - Chat and bulletin user resolution are inconsistent:
   - chat can fall back to `default_user`
   - bulletin user-specific endpoints require `X-User-Id`
-- `backend/worker` is only a minimal Celery skeleton and is not wired into `docker-compose.yml`.
+- `backend/worker` is wired into Docker Compose, but the chat/RAG request path still runs synchronously through the backend service.
 - BM25 retrieval depends on an external SQLite index under `exports/retrieval`.
 - The clustering save path deletes old clusters and clears all `Article.cluster_id` values before writing new assignments.
 - Data hygiene CSVs and DB embeddings must stay hash-aligned; clustering skips stale rows.

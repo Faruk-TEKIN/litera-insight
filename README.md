@@ -151,11 +151,10 @@ Teslim ve çalışma için önerilen tek akış Docker Compose'tur. Model dahil 
 
 ```bash
 cp .env.example .env
-docker compose down --remove-orphans
-docker compose up -d --build
+./setup.sh
 ```
 
-İlk açılışta `ollama-pull` servisi modeli indirir ve ısıtır. Backend migration'ları uygular, `postgres` ve `redis` servislerini kullanır, frontend ise `5173` üzerinde açılır.
+İlk açılışta `ollama-pull` servisi modeli indirir ve ısıtır. Backend migration'ları otomatik uygular, `postgres` ve `redis` servislerini kullanır, frontend ise `5173` üzerinde açılır.
 
 Durumu doğrulamak için:
 
@@ -166,6 +165,30 @@ docker compose logs -f ollama-pull backend frontend
 ```
 
 Varsayılan çalışma modeli `MODEL_NAME=qwen2.5:0.5b` değeridir. Docker tesliminde reranker kapalı gelir; bu, ilk yanıtı hızlandırmak için bilerek yapılmıştır.
+
+İlk kurulumda demo verisini de yüklemek isterseniz:
+
+```bash
+./setup.sh --seed
+```
+
+`--seed` akışı şu bir defalık adımları container içinde çalıştırır:
+
+- `run_bulk_ingest.py`
+- `embeddings_to_db.py`
+- `build_bm25_index.py`
+- `ClusterFunctions.py`
+- `ReportSnapshotService.refresh_default_snapshots()`
+
+Sonradan veri yenilemek veya pipeline adımlarını tek tek çalıştırmak için aynı container tabanlı komutlar şunlardır:
+
+```bash
+docker compose run --rm --no-deps --entrypoint python backend /app/run_bulk_ingest.py --max-results 4000 --sources arxiv,openalex
+docker compose run --rm --no-deps --entrypoint python backend /app/ai_engine/embeddings/embeddings_to_db.py --total-articles 4000 --batch-size 250
+docker compose run --rm --no-deps --entrypoint python backend /app/scripts/build_bm25_index.py
+docker compose run --rm --no-deps --entrypoint python backend /app/ai_engine/clustering/ClusterFunctions.py --max-articles 4000 --include-openalex
+docker compose run --rm --no-deps --entrypoint python backend -c "from database.db import SessionLocal; from backend.app.services.report_snapshot_service import ReportSnapshotService; db=SessionLocal(); print(ReportSnapshotService(db).refresh_default_snapshots()); db.close()"
+```
 
 Testleri çalıştırmak için:
 

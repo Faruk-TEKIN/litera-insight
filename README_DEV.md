@@ -90,8 +90,7 @@ Teslim için tek desteklenen akış Docker Compose'tur. Model dahil tüm servisl
 
 ```bash
 cp .env.example .env
-docker compose down --remove-orphans
-docker compose up -d --build
+./setup.sh
 ```
 
 Bu akışta:
@@ -103,6 +102,24 @@ Bu akışta:
 - Alembic migration'ları uygular.
 - Report snapshot cache'ini yeniler.
 - Frontend `5173`, backend `8000` üzerinde açılır.
+
+İlk kurulumda demo verisini de container içinden yüklemek için:
+
+```bash
+./setup.sh --seed
+```
+
+`--seed` modunda sırasıyla ingestion, embedding, BM25 index, clustering ve snapshot refresh çalışır.
+
+İhtiyaç halinde aynı adımlar tek tek şu komutlarla da çalıştırılabilir:
+
+```bash
+docker compose run --rm --no-deps --entrypoint python backend /app/run_bulk_ingest.py --max-results 4000 --sources arxiv,openalex
+docker compose run --rm --no-deps --entrypoint python backend /app/ai_engine/embeddings/embeddings_to_db.py --total-articles 4000 --batch-size 250
+docker compose run --rm --no-deps --entrypoint python backend /app/scripts/build_bm25_index.py
+docker compose run --rm --no-deps --entrypoint python backend /app/ai_engine/clustering/ClusterFunctions.py --max-articles 4000 --include-openalex
+docker compose run --rm --no-deps --entrypoint python backend -c "from database.db import SessionLocal; from backend.app.services.report_snapshot_service import ReportSnapshotService; db=SessionLocal(); print(ReportSnapshotService(db).refresh_default_snapshots()); db.close()"
+```
 
 Free ve API key gerektirmeyen veri cekimini tek basina tekrar calistirmak icin:
 

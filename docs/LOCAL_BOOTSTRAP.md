@@ -6,8 +6,7 @@ Bu repo için teslim akışı Docker Compose'tur. Model dahil tüm servisler kon
 
 ```bash
 cp .env.example .env
-docker compose down --remove-orphans
-docker compose up -d --build
+./setup.sh
 ```
 
 ## Ne Olur
@@ -18,6 +17,32 @@ docker compose up -d --build
 - Backend migration'ları uygular ve cache snapshot'larını yeniler.
 - Backend ve worker aynı in-network `ollama` servisini kullanır.
 - RAG teslim profili için reranker kapalı gelir.
+
+## İlk Kurulumda Veri Yükleme
+
+Eğer dump kullanmıyorsanız ve demo veri setini de yüklemek istiyorsanız:
+
+```bash
+./setup.sh --seed
+```
+
+Bu mod container içinde şu bir defalık işleri çalıştırır:
+
+- `run_bulk_ingest.py`
+- `ai_engine/embeddings/embeddings_to_db.py`
+- `scripts/build_bm25_index.py`
+- `ai_engine/clustering/ClusterFunctions.py`
+- `ReportSnapshotService.refresh_default_snapshots()`
+
+Aynı adımlar elle çalıştırılmak istenirse komut dizisi şöyledir:
+
+```bash
+docker compose run --rm --no-deps --entrypoint python backend /app/run_bulk_ingest.py --max-results 4000 --sources arxiv,openalex
+docker compose run --rm --no-deps --entrypoint python backend /app/ai_engine/embeddings/embeddings_to_db.py --total-articles 4000 --batch-size 250
+docker compose run --rm --no-deps --entrypoint python backend /app/scripts/build_bm25_index.py
+docker compose run --rm --no-deps --entrypoint python backend /app/ai_engine/clustering/ClusterFunctions.py --max-articles 4000 --include-openalex
+docker compose run --rm --no-deps --entrypoint python backend -c "from database.db import SessionLocal; from backend.app.services.report_snapshot_service import ReportSnapshotService; db=SessionLocal(); print(ReportSnapshotService(db).refresh_default_snapshots()); db.close()"
+```
 
 ## Doğrulama
 

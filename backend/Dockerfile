@@ -21,6 +21,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY backend /app/backend
 COPY ai_engine /app/ai_engine
 COPY database /app/database
+COPY scripts /app/scripts
+COPY run_bulk_ingest.py /app/run_bulk_ingest.py
+COPY run_kaggle_arxiv_ingest.py /app/run_kaggle_arxiv_ingest.py
+COPY reset_database.py /app/reset_database.py
 COPY backend/docker-entrypoint.sh /app/docker-entrypoint.sh
 RUN chmod +x /app/docker-entrypoint.sh
 

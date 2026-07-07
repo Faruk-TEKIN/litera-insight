@@ -544,6 +544,37 @@ def test_cluster_high_confidence_outlier_reassignment_uses_embedding_centroids()
     assert stats["reassigned_outlier_count"] == 1
 
 
+def test_native_outlier_reassignment_preserves_existing_non_outlier_topics():
+    topics = [0, 1, -1, 2, -1]
+    unique_topic_ids = [0, 1, 2]
+    distribution = np.array(
+        [
+            [0.10, 0.80, 0.10],
+            [0.20, 0.70, 0.10],
+            [0.91, 0.05, 0.04],
+            [0.05, 0.10, 0.85],
+            [0.20, 0.30, 0.50],
+        ],
+        dtype=np.float32,
+    )
+
+    updated_topics = list(topics)
+    for index, prob in enumerate(distribution):
+        if updated_topics[index] != -1:
+            continue
+        if np.max(prob) >= 0.88:
+            updated_topics[index] = unique_topic_ids[int(np.argmax(prob))]
+
+    assert updated_topics == [0, 1, 0, 2, -1]
+
+
+def test_cluster_retries_only_when_topic_count_is_pathologically_low():
+    assert Cluster._should_retry_with_finer_granularity([0, 1, -1, 2], document_count=2000) is False
+    assert Cluster._should_retry_with_finer_granularity([0, 1, -1], document_count=2000) is True
+    assert Cluster._should_retry_with_finer_granularity([-1, -1, 0], document_count=2000) is True
+    assert Cluster._should_retry_with_finer_granularity([0, 1], document_count=200) is False
+
+
 def test_digest_score_uses_centrality_recency_and_citation_count():
     older = Article(id=1, title="Older", citation_count=100, publish_date=datetime(2025, 1, 1))
     newer = Article(id=2, title="Newer", citation_count=5, publish_date=datetime(2026, 1, 1))

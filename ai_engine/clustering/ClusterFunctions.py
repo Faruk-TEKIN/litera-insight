@@ -151,6 +151,7 @@ DEFAULT_UMAP_N_NEIGHBORS = 30
 DEFAULT_UMAP_N_COMPONENTS = 10
 DEFAULT_UMAP_MIN_DIST = 0.05
 DEFAULT_OUTLIER_REASSIGNMENT_THRESHOLD = 0.88
+LOW_CLUSTER_COUNT_FALLBACK_THRESHOLD = 2
 CUSTOM_ACADEMIC_STOPWORDS = {
     "paper",
     "study",
@@ -321,16 +322,53 @@ class Cluster:
                 unique_topic_ids = sorted(list(set(topic_model.topics_) - {-1}))
                 if unique_topic_ids:
                     distribution, _ = topic_model.approximate_distribution(docs)
-                    topics = [
-                        unique_topic_ids[np.argmax(prob)] if np.max(prob) >= outlier_reassignment_threshold else -1
-                        for prob in distribution
-                    ]
+                    updated_topics = list(topics)
+                    for index, prob in enumerate(distribution):
+                        if updated_topics[index] != -1:
+                            continue
+                        if np.max(prob) >= outlier_reassignment_threshold:
+                            updated_topics[index] = unique_topic_ids[int(np.argmax(prob))]
+                    topics = updated_topics
                     print(f"Outliers managed via distribution strategy. Post-outliers: {topics.count(-1)}")
                 else:
                     print("No non-outlier topics found. Skipping native reassignment.")
             except Exception as e:
                 print(f"Native reassignment failed ({e}), falling back to centroid method.")
                 topics, _ = Cluster._reassign_high_confidence_outliers(embeddings, topics, outlier_reassignment_threshold)
+
+        if Cluster._should_retry_with_finer_granularity(topics, len(clean_articles)):
+            print("\n=== LOW CLUSTER COUNT FALLBACK ===")
+            print("Retrying BERTopic with finer-grained defaults because the initial result is too coarse.")
+            fallback_model = Cluster._build_topic_model(
+                min_topic_size=min_topic_size,
+                min_samples=3,
+                umap_n_neighbors=15,
+                umap_n_components=5,
+                umap_min_dist=0.0,
+                cluster_selection_method="leaf",
+                runtime_profile=runtime_profile,
+            )
+            with Cluster._threadpool_limits(runtime_profile):
+                fallback_topics, fallback_probs = fallback_model.fit_transform(docs, embeddings=embeddings)
+            fallback_topics = Cluster._apply_outlier_reassignment(
+                topic_model=fallback_model,
+                docs=docs,
+                embeddings=embeddings,
+                topics=fallback_topics,
+                reassign_outliers=reassign_outliers,
+                outlier_reassignment_threshold=outlier_reassignment_threshold,
+            )
+            if Cluster._topic_count(fallback_topics) > Cluster._topic_count(topics):
+                print(
+                    "Accepted fallback clustering: "
+                    f"{Cluster._topic_count(topics)} -> {Cluster._topic_count(fallback_topics)} clusters."
+                )
+                topic_model = fallback_model
+                topics = fallback_topics
+                probs = fallback_probs
+                raw_outlier_count = list(topic_model.topics_).count(-1)
+            else:
+                print("Fallback clustering did not improve topic count. Keeping the initial model.")
 
         # CLUSTERING RESULTS
         unique_topics = set(topics)
@@ -600,6 +638,51 @@ class Cluster:
             verbose=True,
             nr_topics=None,
         )
+
+    @staticmethod
+    def _apply_outlier_reassignment(
+        topic_model,
+        docs,
+        embeddings,
+        topics,
+        reassign_outliers: bool,
+        outlier_reassignment_threshold: float,
+    ) -> list[int]:
+        raw_outlier_count = list(topics).count(-1)
+        if not reassign_outliers or raw_outlier_count == 0:
+            return list(topics)
+
+        try:
+            unique_topic_ids = sorted(list(set(topic_model.topics_) - {-1}))
+            if unique_topic_ids:
+                distribution, _ = topic_model.approximate_distribution(docs)
+                updated_topics = list(topics)
+                for index, prob in enumerate(distribution):
+                    if updated_topics[index] != -1:
+                        continue
+                    if np.max(prob) >= outlier_reassignment_threshold:
+                        updated_topics[index] = unique_topic_ids[int(np.argmax(prob))]
+                return updated_topics
+        except Exception:
+            pass
+
+        updated_topics, _ = Cluster._reassign_high_confidence_outliers(
+            embeddings,
+            topics,
+            outlier_reassignment_threshold,
+        )
+        return updated_topics
+
+    @staticmethod
+    def _topic_count(topics) -> int:
+        unique_topics = {int(topic) for topic in topics}
+        return len(unique_topics - {-1})
+
+    @staticmethod
+    def _should_retry_with_finer_granularity(topics, document_count: int) -> bool:
+        if document_count < 500:
+            return False
+        return Cluster._topic_count(topics) <= LOW_CLUSTER_COUNT_FALLBACK_THRESHOLD
 
     @staticmethod
     def _default_min_samples(min_topic_size: int) -> int:

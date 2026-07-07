@@ -32,8 +32,8 @@ def parse_args():
     parser.add_argument(
         "--max-results",
         type=int,
-        default=10000,
-        help="Her kaynak ve sorgu icin cekilecek maksimum makale sayisi.",
+        default=4000,
+        help="Her kaynak ve sorgu icin cekilecek maksimum makale sayisi. Varsayilan bootstrap icin 4000.",
     )
     parser.add_argument(
         "--query",

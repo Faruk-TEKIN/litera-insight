@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.config import settings
 from backend.app.core.database import SessionLocal
 from backend.app.schemas.retrieval import RetrievalFilters, RetrievedArticle, RouteDecision
+from backend.app.services.assistant_prompts import ACADEMIC_ASSISTANT_SYSTEM_PROMPT
 from backend.app.services.conversation_memory_service import ConversationMemory, ConversationMemoryService
 from backend.app.services.ollama_service import OllamaServiceError, get_ollama_service
 from backend.app.services.rag_router_service import OUT_OF_SCOPE_REASON_PREFIX, RagRouterService

@@ -6,7 +6,14 @@ from backend.app.services import report_snapshot_service
 
 
 def test_single_analytics_route_registered():
-    analytics_routes = [route for route in app.routes if getattr(route, "path", None) == "/analytics"]
+    all_routes = []
+    for route in app.routes:
+        if hasattr(route, "path"):
+            all_routes.append(route)
+        elif hasattr(route, "original_router"):
+            all_routes.extend(route.original_router.routes)
+            
+    analytics_routes = [route for route in all_routes if getattr(route, "path", None) == "/analytics"]
 
     assert len(analytics_routes) == 1
 

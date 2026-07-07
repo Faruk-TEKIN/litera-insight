@@ -91,7 +91,7 @@ The RAG path depends on all of these being available:
 - Ollama running on `OLLAMA_BASE_URL`.
 - The configured chat model being pulled locally.
 - `intfloat/multilingual-e5-base` available for query embeddings.
-- `cross-encoder/ms-marco-MiniLM-L-6-v2` available for reranking if enabled.
+- `cross-encoder/ms-marco-TinyBERT-L2-v2` available for reranking if enabled.
 - A current `exports/retrieval/articles_bm25.sqlite` index mounted into the backend container.
 - Articles already embedded in Postgres.
 
@@ -379,4 +379,3 @@ Before presenting the project as MVP-ready, the following should pass on a clean
 - `/health/ready` reports database, model, and retrieval readiness.
 - Python tests pass.
 - Frontend build and lint pass.
-

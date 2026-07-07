@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     RAG_BM25_INDEX_PATH: str = "exports/retrieval/articles_bm25.sqlite"
     RAG_DEBUG_RETRIEVAL: bool = False
     RAG_RERANKER_ENABLED: bool = True
-    RAG_RERANKER_MODEL_NAME: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    RAG_RERANKER_MODEL_NAME: str = "cross-encoder/ms-marco-TinyBERT-L2-v2"
     RAG_RERANKER_TOP_N: int = 50
     CHAT_HISTORY_LIMIT: int = 12
     CHAT_SUMMARY_TRIGGER_MESSAGES: int = 24

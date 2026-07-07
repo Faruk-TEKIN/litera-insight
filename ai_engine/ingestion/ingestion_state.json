@@ -1,1 +1,18 @@
-{}
+{
+    "arxiv": {
+        "current_date": "2026-05-01",
+        "start_offset": 2538,
+        "cursor_direction": "backward",
+        "sort_order": "submittedDate_desc",
+        "updated_at": "2026-07-07T12:12:11Z",
+        "last_external_id": "2605.28912v2",
+        "last_publish_date": "2026-05-27T17:36:18",
+        "last_title": "Cycle-Space Informed Detection of Autoencoded Blind False Data Injection Attacks on Power Systems"
+    },
+    "openalex": {
+        "cursor": "IlsxMDAuMCwgMzE4MCwgJ2h0dHBzOi8vb3BlbmFsZXgub3JnL1c0MjIwOTU5OTU1J10i",
+        "filter_signature": "concepts.id:C41008148;from_publication_date:2000-01-01",
+        "last_external_id": "W4220959955",
+        "updated_at": "2026-07-07T10:30:57Z"
+    }
+}

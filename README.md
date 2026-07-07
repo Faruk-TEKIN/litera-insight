@@ -145,42 +145,42 @@ Sistem ilişkisel ve vektörel veriyi PostgreSQL üzerinde şu temel modellerle 
 
 ---
 
-## 7. Geliştirici Çalıştırma Akışı (Runbook Quickstart)
+## 7. Oto Kurulum Adımları
 
-Temiz klon + veri dosyalarıyla otomatik başlangıç akışı için ayrıca [docs/LOCAL_BOOTSTRAP.md](/home/terminal/Documents/projects/git-repo/AcademicAI-Insight/docs/LOCAL_BOOTSTRAP.md) dosyasına bakın.
+Temiz klon + boş veritabanı ile otomatik başlangıç akışı için ayrıca [docs/LOCAL_BOOTSTRAP.md](/home/terminal/Documents/projects/git-repo/bitirme/docs/LOCAL_BOOTSTRAP.md) dosyasına bakın.
 
-Yerel geliştirme ortamında sistemi ayağa kaldırmak için genel adımlar şunlardır:
+Yerel geliştirme ortamında sistemi sıfırdan ayağa kaldırmak için doğrudan şu otomatik akışı çalıştırın:
 
-1. **Docker Compose Başlatma (PostgreSQL ve Frontend/Backend):**
-   ```bash
-   docker compose up --build
-   ```
-2. **Veritabanı Şemasını Güncelleme (Alembic Migration):**
-   ```bash
-   .venv/bin/alembic -c database/alembic.ini upgrade head
-   ```
-3. **Ollama Sunucusunda Modeli Hazırlama:**
-   ```bash
-   ollama pull gemma4:e4b
-   ```
-4. **Veri Çekme, Embedding ve Kümeleme Adımları:**
-   ```bash
-   # 100 makale çek
-   .venv/bin/python run_bulk_ingest.py --max-results 100 --sources arxiv --query "retrieval augmented generation"
-   
-   # Embedding üret
-   .venv/bin/python ai_engine/embeddings/embeddings_to_db.py --total-articles 100 --batch-size 50
-   
-   # BERTopic ile kümele
-   .venv/bin/python ai_engine/clustering/ClusterFunctions.py --max-articles 100
-   
-   # Rapor ve snapshotları oluştur
-   .venv/bin/python -c "from database.db import SessionLocal; from backend.app.services.report_snapshot_service import ReportSnapshotService; db=SessionLocal(); print(ReportSnapshotService(db).refresh_default_snapshots()); db.close()"
-   ```
-5. **Testleri Çalıştırma:**
-   ```bash
-   .venv/bin/pytest tests
-   ```
+```bash
+ollama pull qwen2.5:0.5b
+./setup.sh
+```
+
+Alternatif olarak kurulum adımlarını manuel olarak da çalıştırabilirsiniz:
+
+```bash
+cp .env.example .env
+python3 -m venv .venv
+.venv/bin/pip install --upgrade pip setuptools wheel
+.venv/bin/pip install -r requirements.txt
+mkdir -p exports/retrieval
+ollama pull qwen2.5:0.5b
+docker compose up -d --build
+.venv/bin/python run_bulk_ingest.py --max-results 4000 --sources arxiv
+.venv/bin/python ai_engine/embeddings/embeddings_to_db.py --total-articles 4000 --batch-size 250
+.venv/bin/python scripts/build_bm25_index.py
+.venv/bin/python ai_engine/clustering/ClusterFunctions.py --max-articles 4000
+```
+
+Bu akış PostgreSQL'i boş veritabanı ile başlatır, `pgvector` extension'ını hazırlar, backend migration'larını uygular, ücretsiz arXiv/OpenAlex kaynaklarından veri çeker, embedding üretir, BM25 index'i kurar ve BERTopic clusterlarını LLM label'larıyla yazar.
+
+Kullanılan varsayılan LLM `MODEL_NAME=qwen2.5:0.5b` değeridir. RAG reranker modeli hafif çalışma için `RAG_RERANKER_MODEL_NAME=cross-encoder/ms-marco-TinyBERT-L2-v2` değerine ayarlanmıştır.
+
+Testleri çalıştırmak için:
+
+```bash
+.venv/bin/pytest tests
+```
 
 ---
 

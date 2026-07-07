@@ -575,7 +575,7 @@ Hybrid fusion:
 
 Reranking:
 
-- If enabled, `CrossEncoderReranker` reranks fused candidates with `cross-encoder/ms-marco-MiniLM-L-6-v2` by default.
+- If enabled, `CrossEncoderReranker` reranks fused candidates with `cross-encoder/ms-marco-TinyBERT-L2-v2` by default.
 - If reranking fails, retrieval falls back to fused ranking.
 
 Special retrieval paths:

@@ -84,35 +84,66 @@ Sadece migration uygulamak icin:
 .venv/bin/alembic -c database/alembic.ini upgrade head
 ```
 
-## Demo / Local Bootstrap
+## Oto Kurulum Adımları
 
-Uygulama, `exports/retrieval/` altina kopyalanan iki dosyayi otomatik kullanir:
+Uygulama artik dump dosyasi olmadan da temiz bir klondan baslayabilir.
 
-- `exports/retrieval/academic_platform.dump`
-- `exports/retrieval/articles_bm25.sqlite`
-
-Uçtan uca ilk kurulum akışı:
+Temiz klondan uc tan uca otomatik kurulum akisi:
 
 ```bash
 git clone <repo-url>
-cp -r /path/to/database/* <repo-root>/exports/retrieval/
 cd <repo-root>
-docker compose up --build
+ollama pull qwen2.5:0.5b
+./setup.sh
 ```
 
-Buradaki `/path/to/database`, `academic_platform.dump` ve `articles_bm25.sqlite` dosyalarının bulunduğu yerel klasördür.
+Alternatif olarak kurulum adımlarını manuel olarak da çalıştırabilirsiniz:
+
+```bash
+cp .env.example .env
+python3 -m venv .venv
+.venv/bin/pip install --upgrade pip setuptools wheel
+.venv/bin/pip install -r requirements.txt
+mkdir -p exports/retrieval
+ollama pull qwen2.5:0.5b
+docker compose up -d --build
+.venv/bin/python run_bulk_ingest.py --max-results 4000 --sources arxiv
+.venv/bin/python ai_engine/embeddings/embeddings_to_db.py --total-articles 4000 --batch-size 250
+.venv/bin/python scripts/build_bm25_index.py
+.venv/bin/python ai_engine/clustering/ClusterFunctions.py --max-articles 4000
+```
 
 Bu akışta:
 
-- PostgreSQL ilk açılışta dump dosyasını restore eder.
+- PostgreSQL dump yoksa bos veritabani ile baslar.
+- PostgreSQL init asamasinda `vector` extension aktif edilir.
 - Backend açılışta database hazır olana kadar bekler.
-- Gerekirse dump'ı backend tarafında da otomatik restore eder.
-- Ollama servisi başlar ve `MODEL_NAME` ile belirtilen model otomatik indirilir.
+- RAG ve cluster labelling icin `.env` icindeki `MODEL_NAME` kullanilir.
 - Alembic migration'ları uygular.
 - Report snapshot cache'ini yeniler.
-- Frontend, restore edilmiş PostgreSQL verisini ve mounted BM25 indeksini kullanır.
+- Free kaynaklardan veri cekilir, embedding uretilir, BM25 index kurulur ve cluster labelling calisir.
 
-Eğer sadece veriyi sıfırlamak istersen `docker compose down -v` kullanabilirsin; normal bootstrap için artık gerekmez.
+Free ve API key gerektirmeyen veri cekimini tek basina tekrar calistirmak icin:
+
+```bash
+.venv/bin/python run_bulk_ingest.py --max-results 4000 --sources arxiv,openalex
+```
+
+Bu adim `Oto Kurulum Adımları` komut blogunun icinde zaten vardir; sadece veri setini yenilemek icin ayrica calistirilir.
+
+Varsayilan RAG demo profili:
+
+- `RAG_RERANKER_MODEL_NAME=cross-encoder/ms-marco-TinyBERT-L2-v2`
+
+Opsiyonel tek seferlik embedding ve clustering adimlari:
+
+```bash
+.venv/bin/python ai_engine/embeddings/embeddings_to_db.py --total-articles 4000 --batch-size 250
+.venv/bin/python scripts/build_bm25_index.py
+.venv/bin/python ai_engine/clustering/ClusterFunctions.py --max-articles 4000 --include-openalex
+```
+
+Eger `exports/retrieval/academic_platform.dump` varsa ilk acilista restore edilmeye devam eder; artik zorunlu degildir.
 
 ## Ollama
 

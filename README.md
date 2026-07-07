@@ -38,6 +38,13 @@ This platform addresses those issues with a single local workflow:
 - It provides an AI-assisted Chat interface that uses RAG to answer over current local papers and cites its sources.
 - It generates validated weekly bulletins and cluster digests for faster literature review.
 
+### Demo Video
+
+<video controls width="100%" preload="metadata" poster="docs/demo-cover.jpg">
+  <source src="docs/demo.mp4" type="video/mp4" />
+  Your browser does not support embedded video. Open the demo video from `docs/demo.mp4`.
+</video>
+
 ---
 
 ## Technology Stack

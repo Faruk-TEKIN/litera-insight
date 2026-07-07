@@ -40,10 +40,7 @@ This platform addresses those issues with a single local workflow:
 
 ### Demo Video
 
-<video controls width="100%" preload="metadata" poster="docs/demo-cover.jpg">
-  <source src="docs/demo.mp4" type="video/mp4" />
-  Your browser does not support embedded video. Open the demo video from `docs/demo.mp4`.
-</video>
+![Demo video preview](docs/demo-preview.gif)
 
 ---
 

@@ -1,32 +1,32 @@
-# Oto Kurulum Adımları
+# Automatic Setup Steps
 
-Bu repo için teslim akışı Docker Compose'tur. Model dahil tüm servisler konteyner içinde çalışır.
+The delivery flow for this repository is Docker Compose. All services, including the model runtime, run inside containers.
 
-## Beklenen Akış
+## Expected Flow
 
 ```bash
 cp .env.example .env
 ./setup.sh
 ```
 
-## Ne Olur
+## What Happens
 
-- PostgreSQL dump yoksa boş veritabanı ile başlar.
-- `pgvector` extension PostgreSQL init sırasında etkinleşir.
-- `ollama-pull` modeli indirir ve ısıtır.
-- Backend migration'ları uygular ve cache snapshot'larını yeniler.
-- Backend ve worker aynı in-network `ollama` servisini kullanır.
-- RAG teslim profili için reranker kapalı gelir.
+- If no PostgreSQL dump is present, the system starts with an empty database.
+- The `pgvector` extension is enabled during PostgreSQL initialization.
+- `ollama-pull` downloads and warms the configured model.
+- The backend applies migrations and refreshes cached report snapshots.
+- The backend and worker use the same in-network `ollama` service.
+- The reranker is disabled in the delivery profile for faster RAG responses.
 
-## İlk Kurulumda Veri Yükleme
+## First-Time Data Bootstrap
 
-Eğer dump kullanmıyorsanız ve demo veri setini de yüklemek istiyorsanız:
+If you are not using a dump and want demo data loaded during initial setup:
 
 ```bash
 ./setup.sh --seed
 ```
 
-Bu mod container içinde şu bir defalık işleri çalıştırır:
+This mode runs the following one-time tasks inside containers:
 
 - `run_bulk_ingest.py`
 - `ai_engine/embeddings/embeddings_to_db.py`
@@ -34,7 +34,7 @@ Bu mod container içinde şu bir defalık işleri çalıştırır:
 - `ai_engine/clustering/ClusterFunctions.py`
 - `ReportSnapshotService.refresh_default_snapshots()`
 
-Aynı adımlar elle çalıştırılmak istenirse komut dizisi şöyledir:
+To run the same steps manually:
 
 ```bash
 docker compose run --rm --no-deps --entrypoint python backend /app/run_bulk_ingest.py --max-results 4000 --sources arxiv,openalex
@@ -44,7 +44,7 @@ docker compose run --rm --no-deps --entrypoint python backend /app/ai_engine/clu
 docker compose run --rm --no-deps --entrypoint python backend -c "from database.db import SessionLocal; from backend.app.services.report_snapshot_service import ReportSnapshotService; db=SessionLocal(); print(ReportSnapshotService(db).refresh_default_snapshots()); db.close()"
 ```
 
-## Doğrulama
+## Verification
 
 ```bash
 curl http://127.0.0.1:8000/health
@@ -52,9 +52,9 @@ curl http://127.0.0.1:8000/health/ready
 docker compose logs -f ollama-pull backend frontend
 ```
 
-## Opsiyonel Yeniden Kurulum
+## Optional Full Rebuild
 
-Eğer stack'i tamamen temizleyip yeniden kurmak isterseniz:
+If you want to remove the stack and rebuild it from scratch:
 
 ```bash
 docker compose down --remove-orphans

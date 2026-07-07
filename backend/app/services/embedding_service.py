@@ -7,7 +7,6 @@ from sentence_transformers import SentenceTransformer
 from ai_engine.data_hygiene import build_embedding_text
 from backend.app.core.config import settings
 
-EMBEDDING_MODEL_NAME = settings.EMBEDDING_MODEL_NAME
 SUPPORTED_EMBEDDING_DEVICES = {"auto", "cuda", "mps", "cpu"}
 
 
@@ -39,7 +38,7 @@ def resolve_embedding_device(requested_device: str | None = None) -> str:
 @lru_cache(maxsize=1)
 def get_embedding_model() -> SentenceTransformer:
     device = resolve_embedding_device()
-    return SentenceTransformer(EMBEDDING_MODEL_NAME, device=device)
+    return SentenceTransformer(settings.EMBEDDING_MODEL_NAME, device=device)
 
 
 class EmbeddingService:

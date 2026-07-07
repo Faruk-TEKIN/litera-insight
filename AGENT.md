@@ -128,7 +128,7 @@ Environment:
 
 - Start from `.env.example`.
 - For local non-Docker backend runs, `DATABASE_URL` should point to localhost PostgreSQL.
-- For Docker Compose, the provided compose file points backend database access at the `postgres` service and Ollama at `host.docker.internal:11434`.
+- For Docker Compose, the provided compose file points backend database access at the `postgres` service and Ollama at the in-network `ollama` service.
 - Backend health check: `http://127.0.0.1:8000/health`.
 - Frontend default URL: `http://localhost:5173`.
 

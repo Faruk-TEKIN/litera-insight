@@ -22,6 +22,7 @@ interface Message {
 }
 
 export default function ChatPage() {
+  const INACTIVITY_TIMEOUT_MS = 180000;
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
   const location = useLocation();
@@ -188,7 +189,7 @@ export default function ChatPage() {
       setIsTyping(false);
       setStatusText("Response timed out.");
       clearInactivityTimer();
-    }, 150000);
+    }, INACTIVITY_TIMEOUT_MS);
   };
 
   const sendMessage = async (

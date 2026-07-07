@@ -57,6 +57,20 @@ class OllamaService:
         except (ValueError, AttributeError) as exc:
             raise OllamaServiceError("Ollama gecersiz JSON yaniti dondu.") from exc
 
+    def is_model_ready(self) -> bool:
+        url = f"{self.base_url}/api/show"
+        payload = {"name": self.model}
+
+        try:
+            response = requests.post(url, json=payload, timeout=30)
+            response.raise_for_status()
+            data = response.json()
+            return bool(data.get("model") or data.get("details"))
+        except requests.RequestException:
+            return False
+        except ValueError:
+            return False
+
     async def generate_async(self, prompt: str) -> str:
         url = f"{self.base_url}/api/generate"
         payload = {

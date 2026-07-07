@@ -14,6 +14,7 @@ from backend.app.services.conversation_memory_service import ConversationMemory,
 from backend.app.services.ollama_service import OllamaServiceError, get_ollama_service
 from backend.app.services.rag_router_service import OUT_OF_SCOPE_REASON_PREFIX, RagRouterService
 from backend.app.services.retrieval_service import RetrievalService, build_rag_context
+from backend.app.services.assistant_safety import is_refusal_response
 from database.models.ChatMessage import ChatMessage
 from database.models.ChatSession import ChatSession
 
@@ -150,9 +151,11 @@ class ChatOrchestrator:
                 route_decision
                 and route_decision.use_rag
                 and retrieved
-                and not _has_sources_section(full_response)
                 and not is_refusal_response(full_response)
             ):
+                # Modelin ürettiği hatalı Sources/Kaynaklar bölümünü her zaman sil,
+                # doğru tarih/URL bilgilerini içeren kod tarafı versiyonuyla değiştir.
+                full_response = _strip_sources_section(full_response)
                 source_section = _format_sources_section(retrieved)
                 full_response = f"{full_response.rstrip()}\n\n{source_section}"
                 yield f"\n\n{source_section}"
@@ -391,6 +394,17 @@ def _looks_turkish(message: str) -> bool:
 
 def _has_sources_section(text: str) -> bool:
     return bool(re.search(r"(^|\n)\s*(?:#+\s*)?(?:Sources|Kaynaklar)\b\s*:?", text or "", flags=re.IGNORECASE))
+
+
+def _strip_sources_section(text: str) -> str:
+    """Modelin ürettiği Sources/Kaynaklar bölümünü metnin sonundan siler."""
+    stripped = re.split(
+        r"\n\s*(?:#+\s*)?(?:Sources|Kaynaklar)\b\s*:?",
+        text or "",
+        flags=re.IGNORECASE,
+        maxsplit=1,
+    )[0]
+    return stripped.rstrip()
 
 
 def _format_sources_section(retrieved: list[RetrievedArticle]) -> str:

@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql+psycopg2://postgres:postgres@localhost:5432/academic_platform"
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     MODEL_NAME: str = "qwen2.5:0.5b"
+    # WORKER_MODEL_NAME: Celery worker için kullanılan model (arka plan görevleri).
+    # Boş bırakılırsa MODEL_NAME'e düşer.
+    WORKER_MODEL_NAME: str = ""
     EMBEDDING_MODEL_NAME: str = "intfloat/multilingual-e5-base"
     EMBEDDING_DEVICE: str = "auto"
     EMBEDDING_ENCODE_BATCH_SIZE: int = 64

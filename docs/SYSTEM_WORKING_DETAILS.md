@@ -112,7 +112,7 @@ Key settings:
 - `backend`: FastAPI container, exposes port `8000`, mounts `exports/retrieval` read-only for BM25.
 - `frontend`: Vite app, exposes port `5173`.
 
-Ollama is not containerized in this compose file. The backend reaches it through `host.docker.internal:11434` when running in Docker.
+Ollama is containerized in the main compose file. The backend and worker reach it through the in-network `ollama` service when running in Docker.
 
 ### Database Session Management
 

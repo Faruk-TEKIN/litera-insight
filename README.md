@@ -145,36 +145,27 @@ Sistem ilişkisel ve vektörel veriyi PostgreSQL üzerinde şu temel modellerle 
 
 ---
 
-## 7. Oto Kurulum Adımları
+## 7. Docker-Only Kurulum
 
-Temiz klon + boş veritabanı ile otomatik başlangıç akışı için ayrıca [docs/LOCAL_BOOTSTRAP.md](/home/terminal/Documents/projects/git-repo/bitirme/docs/LOCAL_BOOTSTRAP.md) dosyasına bakın.
-
-Yerel geliştirme ortamında sistemi sıfırdan ayağa kaldırmak için doğrudan şu otomatik akışı çalıştırın:
-
-```bash
-ollama pull qwen2.5:0.5b
-./setup.sh
-```
-
-Alternatif olarak kurulum adımlarını manuel olarak da çalıştırabilirsiniz:
+Teslim ve çalışma için önerilen tek akış Docker Compose'tur. Model dahil tüm servisler konteyner içinde ayağa kalkar.
 
 ```bash
 cp .env.example .env
-python3 -m venv .venv
-.venv/bin/pip install --upgrade pip setuptools wheel
-.venv/bin/pip install -r requirements.txt
-mkdir -p exports/retrieval
-ollama pull qwen2.5:0.5b
+docker compose down --remove-orphans
 docker compose up -d --build
-.venv/bin/python run_bulk_ingest.py --max-results 4000 --sources arxiv
-.venv/bin/python ai_engine/embeddings/embeddings_to_db.py --total-articles 4000 --batch-size 250
-.venv/bin/python scripts/build_bm25_index.py
-.venv/bin/python ai_engine/clustering/ClusterFunctions.py --max-articles 4000
 ```
 
-Bu akış PostgreSQL'i boş veritabanı ile başlatır, `pgvector` extension'ını hazırlar, backend migration'larını uygular, ücretsiz arXiv/OpenAlex kaynaklarından veri çeker, embedding üretir, BM25 index'i kurar ve BERTopic clusterlarını LLM label'larıyla yazar.
+İlk açılışta `ollama-pull` servisi modeli indirir ve ısıtır. Backend migration'ları uygular, `postgres` ve `redis` servislerini kullanır, frontend ise `5173` üzerinde açılır.
 
-Kullanılan varsayılan LLM `MODEL_NAME=qwen2.5:0.5b` değeridir. RAG reranker modeli hafif çalışma için `RAG_RERANKER_MODEL_NAME=cross-encoder/ms-marco-TinyBERT-L2-v2` değerine ayarlanmıştır.
+Durumu doğrulamak için:
+
+```bash
+curl http://127.0.0.1:8000/health
+curl http://127.0.0.1:8000/health/ready
+docker compose logs -f ollama-pull backend frontend
+```
+
+Varsayılan çalışma modeli `MODEL_NAME=qwen2.5:0.5b` değeridir. Docker tesliminde reranker kapalı gelir; bu, ilk yanıtı hızlandırmak için bilerek yapılmıştır.
 
 Testleri çalıştırmak için:
 

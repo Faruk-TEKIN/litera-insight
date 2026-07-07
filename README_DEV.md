@@ -84,44 +84,25 @@ Sadece migration uygulamak icin:
 .venv/bin/alembic -c database/alembic.ini upgrade head
 ```
 
-## Oto Kurulum Adımları
+## Docker-Only Teslim Akışı
 
-Uygulama artik dump dosyasi olmadan da temiz bir klondan baslayabilir.
-
-Temiz klondan uc tan uca otomatik kurulum akisi:
-
-```bash
-git clone <repo-url>
-cd <repo-root>
-ollama pull qwen2.5:0.5b
-./setup.sh
-```
-
-Alternatif olarak kurulum adımlarını manuel olarak da çalıştırabilirsiniz:
+Teslim için tek desteklenen akış Docker Compose'tur. Model dahil tüm servisler konteyner içinde çalışır.
 
 ```bash
 cp .env.example .env
-python3 -m venv .venv
-.venv/bin/pip install --upgrade pip setuptools wheel
-.venv/bin/pip install -r requirements.txt
-mkdir -p exports/retrieval
-ollama pull qwen2.5:0.5b
+docker compose down --remove-orphans
 docker compose up -d --build
-.venv/bin/python run_bulk_ingest.py --max-results 4000 --sources arxiv
-.venv/bin/python ai_engine/embeddings/embeddings_to_db.py --total-articles 4000 --batch-size 250
-.venv/bin/python scripts/build_bm25_index.py
-.venv/bin/python ai_engine/clustering/ClusterFunctions.py --max-articles 4000
 ```
 
 Bu akışta:
 
 - PostgreSQL dump yoksa bos veritabani ile baslar.
-- PostgreSQL init asamasinda `vector` extension aktif edilir.
+- `ollama-pull` modeli indirir ve ısıtır.
 - Backend açılışta database hazır olana kadar bekler.
 - RAG ve cluster labelling icin `.env` icindeki `MODEL_NAME` kullanilir.
 - Alembic migration'ları uygular.
 - Report snapshot cache'ini yeniler.
-- Free kaynaklardan veri cekilir, embedding uretilir, BM25 index kurulur ve cluster labelling calisir.
+- Frontend `5173`, backend `8000` üzerinde açılır.
 
 Free ve API key gerektirmeyen veri cekimini tek basina tekrar calistirmak icin:
 
@@ -147,10 +128,7 @@ Eger `exports/retrieval/academic_platform.dump` varsa ilk acilista restore edilm
 
 ## Ollama
 
-```bash
-ollama serve
-ollama pull gemma4:e4b
-```
+Ollama host üzerinde ayrı çalıştırılmaz; Docker Compose içindeki `ollama` servisi kullanılır.
 
 Farkli model kullanilacaksa `.env` icinde `MODEL_NAME` degerini degistirin.
 
@@ -172,6 +150,12 @@ Beklenen cevap:
 
 ```json
 { "status": "ok" }
+```
+
+Hazırlık kontrolü:
+
+```bash
+curl http://127.0.0.1:8000/health/ready
 ```
 
 Chat endpoint'i:

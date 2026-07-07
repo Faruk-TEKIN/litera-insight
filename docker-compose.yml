@@ -59,7 +59,7 @@ services:
       - PUBLIC_APP_URL=${PUBLIC_APP_URL:-http://localhost:5173}
       - TELEGRAM_LINK_TOKEN_TTL_MINUTES=${TELEGRAM_LINK_TOKEN_TTL_MINUTES:-30}
     volumes:
-      - ./exports/retrieval:/app/exports/retrieval:ro
+      - ./exports/retrieval:/app/exports/retrieval
     depends_on:
       postgres:
         condition: service_started
@@ -91,7 +91,7 @@ services:
       - PUBLIC_APP_URL=${PUBLIC_APP_URL:-http://localhost:5173}
       - TELEGRAM_LINK_TOKEN_TTL_MINUTES=${TELEGRAM_LINK_TOKEN_TTL_MINUTES:-30}
     volumes:
-      - ./exports/retrieval:/app/exports/retrieval:ro
+      - ./exports/retrieval:/app/exports/retrieval
     depends_on:
       postgres:
         condition: service_started

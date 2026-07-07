@@ -12,6 +12,14 @@ python-dotenv
 redis
 celery
 sentence-transformers
+bertopic
+hdbscan
+umap-learn
+scikit-learn
+numpy
+torch
+torchvision
+torchaudio
 pgvector
 email-validator
 pytest

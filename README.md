@@ -121,6 +121,12 @@ This runs the initial data bootstrap inside Docker and covers:
 - clustering,
 - snapshot refresh.
 
+### Demo Video
+
+A short demo recording is available here:
+
+[![Watch the demo video](docs/demo-cover.jpg)](docs/demo.mp4)
+
 ---
 
 ## Data Operations After Installation

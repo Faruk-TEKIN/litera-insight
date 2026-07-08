@@ -260,3 +260,13 @@ docker compose run --rm --no-deps --entrypoint pytest backend tests
 - [Docker bootstrap guide](docs/LOCAL_BOOTSTRAP.md)
 - [System details](docs/SYSTEM_WORKING_DETAILS.md)
 - [Ollama prompts](docs/OLLAMA_PROMPTS.md)
+
+---
+## License
+
+[![License: Responsible AI Source Code v1.1](https://img.shields.io/badge/License-Responsible%20AI%20Source%20Code%20v1.1-blue.svg)](./LICENSE)
+
+This project is licensed under the **Responsible AI Source Code License v1.1**.
+
+The license includes responsible-use restrictions and warranty/liability disclaimers.  
+See the [LICENSE](./LICENSE) file for the full terms.

@@ -560,7 +560,7 @@ export default function BulletinPage() {
             toggleCategory={toggleCategory}
             toggleTopic={toggleTopic}
           />
-          <TelegramConnectionPanel />
+		  {/* <TelegramConnectionPanel /> */}
         </div>
       </div>
     );
@@ -694,7 +694,7 @@ export default function BulletinPage() {
           toggleTopic={toggleTopic}
         />
 
-        <TelegramConnectionPanel />
+		  {/* <TelegramConnectionPanel /> */}
 
         <WeeksBestPanel
           bulletin={weeksBest}

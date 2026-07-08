@@ -139,14 +139,20 @@ MODEL_NAME=qwen2.5:3b
 
 ### Model options by hardware profile
 
+The table below provides approximate model suggestions. Actual performance depends on the selected model tag, quantization level, available RAM/VRAM, context length, and whether the model is loaded fully on GPU or partially on CPU.
+
 | Hardware profile | Models to try | Notes |
 |---|---|---|
 | CPU only / very low memory | `qwen2.5:1.5b`, `llama3.2:1b`, `gemma3:1b` | Lightweight options for basic testing. |
 | Low-end GPU / around 4 GB VRAM | `qwen2.5:3b`, `llama3.2:3b`, `phi4-mini` | Good starting point for local demos and basic research assistance. |
 | Mid-range GPU / around 6–8 GB VRAM | `gemma3:4b`, `qwen3:4b`, `qwen2.5:7b` | Better response quality for summaries and cluster analysis. |
 | Stronger GPU / around 8–12 GB VRAM | `qwen2.5:7b`, `mistral:7b`, `llama3.1:8b`, `deepseek-r1:7b` | Better suited for paper analysis and bulletin generation. |
-| High-memory GPU / around 12–16 GB VRAM | `mistral-nemo:12b`, `qwen2.5:14b`, `phi4` | Higher-quality responses with higher memory usage. |
-| High-end GPU / 16 GB+ VRAM | `qwen2.5:14b`, `deepseek-r1:14b`, `qwen2.5:32b` | Heavier local models. |
+| High-memory GPU / around 12–16 GB VRAM | `mistral-nemo:12b`, `qwen2.5:14b`, `deepseek-r1:14b`, `phi4` | Higher-quality responses with higher memory usage. |
+| High-end GPU / 24 GB+ VRAM | `qwen2.5:32b`, `deepseek-r1:32b` | Heavier local models; may require more VRAM/RAM depending on quantization and context length. |
+
+For more detailed information about available Ollama models, model tags, parameter sizes, quantization variants, and hardware requirements, see the official Ollama model library:
+
+- [Ollama Model Library](https://ollama.com/library)
 
 ### Changing the model
 

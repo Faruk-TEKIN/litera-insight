@@ -17,7 +17,7 @@ export default function Layout() {
             <span className="text-white font-bold text-sm">AC</span>
           </div>
           <span className="hidden lg:block ml-3 text-white font-semibold text-sm tracking-wide">
-            AcademicAI
+            AcademicAI-Insight
           </span>
         </div>
 

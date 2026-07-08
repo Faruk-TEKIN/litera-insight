@@ -124,6 +124,62 @@ This runs the initial data bootstrap inside Docker and covers:
 - BM25 index generation,
 - clustering,
 - snapshot refresh.
+---
+## Local LLM model selection
+
+AcademicAI-Insight uses Ollama for local assistant responses, research summaries, cluster analysis, and Week's Best bulletin generation.
+
+The active model is configured in the `.env` file:
+
+```env
+MODEL_NAME=qwen2.5:3b
+```
+
+`MODEL_NAME` must match a model that is installed in the Ollama container.
+
+### Model options by hardware profile
+
+| Hardware profile | Models to try | Notes |
+|---|---|---|
+| CPU only / very low memory | `qwen2.5:1.5b`, `llama3.2:1b`, `gemma3:1b` | Lightweight options for basic testing. |
+| Low-end GPU / around 4 GB VRAM | `qwen2.5:3b`, `llama3.2:3b`, `phi4-mini` | Good starting point for local demos and basic research assistance. |
+| Mid-range GPU / around 6–8 GB VRAM | `gemma3:4b`, `qwen3:4b`, `qwen2.5:7b` | Better response quality for summaries and cluster analysis. |
+| Stronger GPU / around 8–12 GB VRAM | `qwen2.5:7b`, `mistral:7b`, `llama3.1:8b`, `deepseek-r1:7b` | Better suited for paper analysis and bulletin generation. |
+| High-memory GPU / around 12–16 GB VRAM | `mistral-nemo:12b`, `qwen2.5:14b`, `phi4` | Higher-quality responses with higher memory usage. |
+| High-end GPU / 16 GB+ VRAM | `qwen2.5:14b`, `deepseek-r1:14b`, `qwen2.5:32b` | Heavier local models. |
+
+### Changing the model
+
+Pull the model first:
+
+```bash
+docker compose exec ollama ollama pull qwen2.5:7b
+```
+
+Update `.env`:
+
+```env
+MODEL_NAME=qwen2.5:7b
+```
+
+Restart the system with the updated configuration:
+
+```bash
+docker compose down --remove-orphans
+docker compose up -d --build
+```
+
+Verify installed Ollama models:
+
+```bash
+docker compose exec ollama ollama list
+```
+
+Check that the backend is ready:
+
+```bash
+curl http://127.0.0.1:8000/health/ready
+```
 
 ---
 

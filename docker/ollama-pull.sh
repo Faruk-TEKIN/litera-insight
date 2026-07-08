@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-MODEL_NAME="${MODEL_NAME:-qwen2.5:0.5b}"
+MODEL_NAME="${MODEL_NAME:-qwen2.5:3b}"
 WORKER_MODEL_NAME="${WORKER_MODEL_NAME:-}"
 
 until ollama list >/dev/null 2>&1; do

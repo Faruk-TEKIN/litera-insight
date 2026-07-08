@@ -136,7 +136,7 @@ export default function Layout() {
             <span className="text-sm font-semibold">A</span>
           </div>
           <div className="min-w-0">
-            <p className="truncate text-sm font-semibold leading-none">AcademicAI</p>
+            <p className="truncate text-sm font-semibold leading-none">AcademicAI-Insight</p>
             <p className="mt-1 text-xs text-[var(--text-muted)]">Research workspace</p>
           </div>
         </button>
@@ -295,7 +295,7 @@ export default function Layout() {
           >
             <Menu size={18} />
           </button>
-          <span className="text-sm font-semibold">AcademicAI</span>
+          <span className="text-sm font-semibold">AcademicAI-Insight</span>
           <div className="flex items-center gap-2">
             {user ? <NotificationBell /> : null}
             <button

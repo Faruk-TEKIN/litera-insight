@@ -6,7 +6,7 @@ const sampleMessages: ChatMessage[] = [
   {
     id: '1',
     role: 'assistant',
-    content: 'Welcome to AcademicAI Chat! I can help you explore academic paper clusters, find relevant research, and answer questions about the latest publications. What would you like to know?',
+    content: 'Welcome to AcademicAI-Insight Chat! I can help you explore academic paper clusters, find relevant research, and answer questions about the latest publications. What would you like to know?',
     created_at: new Date(Date.now() - 60000).toISOString(),
   },
 ];

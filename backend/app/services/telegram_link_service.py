@@ -7,8 +7,8 @@ import secrets
 from sqlalchemy.orm import Session
 
 from backend.app.core.config import settings
-from database.models.TelegramLinkToken import TelegramLinkToken
-from database.models.UserTelegramAccount import UserTelegramAccount
+# from database.models.TelegramLinkToken import TelegramLinkToken
+# from database.models.UserTelegramAccount import UserTelegramAccount
 
 
 class TelegramLinkService:

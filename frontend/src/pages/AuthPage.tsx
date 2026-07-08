@@ -59,7 +59,7 @@ export default function AuthPage() {
     <div className="flex min-h-full items-center justify-center bg-[var(--canvas)] px-4 py-8">
       <div className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-8">
         <div className="mb-6 text-center">
-          <h1 className="text-2xl font-semibold text-[var(--text-primary)]">AcademicAI Account</h1>
+          <h1 className="text-2xl font-semibold text-[var(--text-primary)]">AcademicAI-Insight Account</h1>
           <p className="mt-2 text-sm text-[var(--text-secondary)]">
             {mode === 'signup' ? 'Create a new account to save your chats.' : 'Sign in to continue and access your sessions.'}
           </p>

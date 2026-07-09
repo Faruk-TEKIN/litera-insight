@@ -7,8 +7,8 @@ import secrets
 from sqlalchemy.orm import Session
 
 from backend.app.core.config import settings
-# from database.models.TelegramLinkToken import TelegramLinkToken
-# from database.models.UserTelegramAccount import UserTelegramAccount
+from database.models.TelegramLinkToken import TelegramLinkToken
+from database.models.UserTelegramAccount import UserTelegramAccount
 
 
 class TelegramLinkService:
@@ -16,8 +16,8 @@ class TelegramLinkService:
         self.db = db
 
     def create_link_token(self, user_id: int) -> dict:
-        if not settings.TELEGRAM_BOT_USERNAME:
-            raise ValueError("TELEGRAM_BOT_USERNAME is not configured.")
+        if not _telegram_configured():
+            raise ValueError("Telegram integration is not configured.")
 
         raw_token = secrets.token_urlsafe(32)
         now = _utcnow_naive()
@@ -39,8 +39,15 @@ class TelegramLinkService:
     def get_status(self, user_id: int) -> dict:
         account = self._get_account(user_id)
         if account is None:
-            return {"linked": False, "telegram_username": None, "is_enabled": False, "last_error": None}
+            return {
+                "configured": _telegram_configured(),
+                "linked": False,
+                "telegram_username": None,
+                "is_enabled": False,
+                "last_error": None,
+            }
         return {
+            "configured": _telegram_configured(),
             "linked": True,
             "telegram_username": account.telegram_username,
             "is_enabled": account.is_enabled,
@@ -111,3 +118,7 @@ class TelegramLinkService:
 
 def _utcnow_naive() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
+
+
+def _telegram_configured() -> bool:
+    return bool(settings.TELEGRAM_BOT_TOKEN and settings.TELEGRAM_BOT_USERNAME)

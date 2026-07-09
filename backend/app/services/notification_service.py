@@ -5,10 +5,10 @@ from datetime import UTC, datetime
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-# from database.models.Notification import Notification
-# from database.models.NotificationDelivery import NotificationDelivery
+from database.models.Notification import Notification
+from database.models.NotificationDelivery import NotificationDelivery
 from database.models.UserBulletinPreference import UserBulletinPreference
-# from database.models.UserTelegramAccount import UserTelegramAccount
+from database.models.UserTelegramAccount import UserTelegramAccount
 
 
 NOTIFICATION_TYPE_WEEKS_BEST = "weeks_best_generated"

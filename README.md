@@ -109,6 +109,12 @@ This will:
 - pull and warm the configured Ollama model,
 - apply migrations automatically during backend startup.
 
+### Optional Telegram PDF Delivery
+
+Telegram notifications are optional. They let users receive Week's Best PDF bulletins on their phone. Local webhook testing uses the optional Docker Compose `telegram` profile with ngrok.
+
+Setup guide: [`docs/TELEGRAM_NOTIFICATIONS.md`](docs/TELEGRAM_NOTIFICATIONS.md)
+
 ### First-Time Demo Bootstrap
 
 If you want the project to start with data and prebuilt retrieval artifacts:

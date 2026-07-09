@@ -159,6 +159,49 @@ services:
       - "5173:5173"
     restart: unless-stopped
 
+  ngrok:
+    image: ngrok/ngrok:latest
+    container_name: ngrok
+    profiles:
+      - telegram
+    env_file:
+      - path: .env
+        required: true
+    environment:
+      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN:-}
+    command:
+      - http
+      - http://backend:8000
+      - --log=stdout
+    ports:
+      - "4040:4040"
+    depends_on:
+      backend:
+        condition: service_started
+    restart: unless-stopped
+
+  telegram-webhook:
+    image: python:3.11-alpine
+    container_name: telegram-webhook
+    profiles:
+      - telegram
+    env_file:
+      - path: .env
+        required: true
+    environment:
+      - BACKEND_HEALTH_URL=http://backend:8000/health
+      - NGROK_API_URL=http://ngrok:4040/api/tunnels
+      - TELEGRAM_WEBHOOK_PATH=/integrations/telegram/webhook
+    command: python /scripts/telegram-webhook-setup.py
+    volumes:
+      - ./docker/telegram-webhook-setup.py:/scripts/telegram-webhook-setup.py:ro
+    depends_on:
+      backend:
+        condition: service_started
+      ngrok:
+        condition: service_started
+    restart: "no"
+
 volumes:
   postgres_data:
   ollama_data:

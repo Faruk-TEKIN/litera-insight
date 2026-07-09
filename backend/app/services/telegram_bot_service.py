@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 from io import BytesIO
+import logging
 
 import httpx
 
 from backend.app.core.config import settings
+
+
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
 class TelegramConfigurationError(RuntimeError):

@@ -2,6 +2,7 @@ import { ensureOk, getBackendBaseUrl } from './client';
 import { getAuthHeaders } from '../lib/auth';
 
 export interface TelegramStatus {
+  configured: boolean;
   linked: boolean;
   telegram_username?: string | null;
   is_enabled: boolean;

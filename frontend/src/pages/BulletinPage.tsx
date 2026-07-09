@@ -560,7 +560,7 @@ export default function BulletinPage() {
             toggleCategory={toggleCategory}
             toggleTopic={toggleTopic}
           />
-		  {/* <TelegramConnectionPanel /> */}
+          <TelegramConnectionPanel />
         </div>
       </div>
     );
@@ -694,7 +694,7 @@ export default function BulletinPage() {
           toggleTopic={toggleTopic}
         />
 
-		  {/* <TelegramConnectionPanel /> */}
+        <TelegramConnectionPanel />
 
         <WeeksBestPanel
           bulletin={weeksBest}
@@ -1162,13 +1162,17 @@ function TelegramConnectionPanel() {
     }
   };
 
+  const configured = status?.configured ?? true;
+
   return (
     <section className="mb-6 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-3">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
           <h2 className="text-sm font-semibold text-[var(--text-primary)]">Telegram notifications</h2>
           <p className="mt-1 text-xs text-[var(--text-secondary)]">
-            {status?.linked
+            {!configured
+              ? 'Optional Telegram delivery is not configured on this instance. Add bot and ngrok settings to enable mobile PDF delivery.'
+              : status?.linked
               ? `Connected${status.telegram_username ? ` as @${status.telegram_username}` : ''}. Week's Best bulletins will be sent as PDF documents.`
               : 'Connect Telegram to receive Week\'s Best bulletins when generation completes.'}
           </p>
@@ -1208,8 +1212,8 @@ function TelegramConnectionPanel() {
             <button
               type="button"
               onClick={connectTelegram}
-              disabled={loading}
-              className="h-9 rounded-md bg-emerald-500 px-3 text-xs font-semibold text-white hover:bg-emerald-600 disabled:opacity-50"
+              disabled={loading || !configured}
+              className="h-9 rounded-md bg-emerald-500 px-3 text-xs font-semibold text-white hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Connect Telegram
             </button>

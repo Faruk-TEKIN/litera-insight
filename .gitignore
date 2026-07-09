@@ -67,6 +67,10 @@ artifacts/
 models/
 !database/models/
 database/models/*
+!database/models/Notification.py
+!database/models/NotificationDelivery.py
+!database/models/TelegramLinkToken.py
+!database/models/UserTelegramAccount.py
 !database/models/UserBulletinPreference.py
 checkpoints/
 runs/

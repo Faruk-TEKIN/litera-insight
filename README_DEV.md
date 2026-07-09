@@ -115,9 +115,9 @@ If `exports/retrieval/academic_platform.dump` exists, it is still restored on fi
 
 ## Optional Telegram Notifications
 
-Telegram PDF delivery is optional. Standard Docker startup does not require Telegram or ngrok.
+Telegram PDF delivery is optional. Standard Docker startup does not require Telegram or ngrok. Enable it only when testing or using mobile PDF delivery.
 
-To enable local Telegram webhook testing, configure BotFather and ngrok values, then start the optional Compose profile:
+Quick setup:
 
 ```bash
 TELEGRAM_BOT_TOKEN='botfather_token' \
@@ -125,16 +125,12 @@ TELEGRAM_BOT_USERNAME='bot_username_without_at' \
 NGROK_AUTHTOKEN='ngrok_authtoken' \
 bash scripts/setup_local_telegram_env.sh
 
-docker compose --profile telegram up -d --build
-```
-
-Or use the setup wrapper after the env file is prepared:
-
-```bash
 ./setup.sh --telegram
 ```
 
-Full setup and testing guide: `docs/TELEGRAM_NOTIFICATIONS.md`.
+User flow: Bulletin page -> `Connect Telegram` -> press `Start` in Telegram -> generate Week's Best -> receive PDF.
+
+Details: `docs/TELEGRAM_NOTIFICATIONS.md`.
 
 ## Ollama
 

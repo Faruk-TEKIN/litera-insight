@@ -111,7 +111,18 @@ This will:
 
 ### Optional Telegram PDF Delivery
 
-Telegram notifications are optional. They let users receive Week's Best PDF bulletins on their phone. Local webhook testing uses the optional Docker Compose `telegram` profile with ngrok.
+Telegram notifications are optional. When enabled, users can connect their Telegram account from the Bulletin page and receive validated Week's Best PDF reports on their phone.
+
+Quick local setup:
+
+```bash
+TELEGRAM_BOT_TOKEN='botfather_token' \
+TELEGRAM_BOT_USERNAME='bot_username_without_at' \
+NGROK_AUTHTOKEN='ngrok_authtoken' \
+bash scripts/setup_local_telegram_env.sh
+
+./setup.sh --telegram
+```
 
 Setup guide: [`docs/TELEGRAM_NOTIFICATIONS.md`](docs/TELEGRAM_NOTIFICATIONS.md)
 

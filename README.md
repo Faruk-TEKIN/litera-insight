@@ -287,9 +287,8 @@ docker compose run --rm --no-deps --entrypoint pytest backend tests
 ---
 ## License
 
-[![License: Responsible AI Source Code v1.1](https://img.shields.io/badge/License-Responsible%20AI%20Source%20Code%20v1.1-blue.svg)](./LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 
-This project is licensed under the **Responsible AI Source Code License v1.1**.
+This project is licensed under the **MIT License**.
 
-The license includes responsible-use restrictions and warranty/liability disclaimers.  
-See the [LICENSE](./LICENSE) file for the full terms.
+See the [LICENSE](./LICENSE) file for the full license text.
